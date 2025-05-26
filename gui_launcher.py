@@ -20,6 +20,10 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
 
+# GANTRY SYSTEM
+import cri_lib
+
+
 class ROS2GuiApp(Node, QWidget):
 
     #----------- Constructor -----------#
@@ -33,7 +37,6 @@ class ROS2GuiApp(Node, QWidget):
         self.bridge = CvBridge()
         self.image_data = None
         self.timer = QTimer()
-        self.timer.timeout.connect(self.update_image)
         self.processes = {}
 
         self.setup_ui()
@@ -41,20 +44,15 @@ class ROS2GuiApp(Node, QWidget):
     #----------- INIT -----------#
     def setup_ui(self):
         layout = QVBoxLayout()
-        self.control_buttons = {}  # Nouveau dictionnaire pour stocker les boutons
+        self.control_buttons = {}
 
         layout.addLayout(self.make_button_pair("Talker", self.launch_talker, self.stop_talker))
         layout.addLayout(self.make_button_pair("Listener", self.launch_listener, self.stop_listener))
         layout.addLayout(self.make_config_button("Configure Rotating Table", self.open_table_config, key="rotate_table"))
         layout.addLayout(self.make_config_button("Configurer la caméra", self.open_camera_config, key="camera_config"))
-        
-        self.image_label = QLabel("📷 Camera not started")
-        self.image_label.setFixedSize(640, 480)
-        layout.addWidget(self.image_label)
+        layout.addLayout(self.make_config_button("Configurer le Gantry", self.open_gantry_config, key="gantry_config"))  # Ajout Gantry
 
         self.setLayout(layout)
-
-        # Vérification initiale
         QTimer.singleShot(1000, self.check_hardware_status)
 
     def make_single_button(self, label, click_func, key=None):
@@ -136,6 +134,15 @@ class ROS2GuiApp(Node, QWidget):
             print(f"[ERROR] USB check failed: {e}")
             return False
 
+    def check_gantry_connection(self):
+        try:
+            controller = cri_lib.CRIController()
+            connected = controller.connect("127.0.0.1", 3921)
+            controller.close()
+            return connected
+        except Exception as e:
+            print(f"[ERROR] Gantry CRI connection failed: {e}")
+            return False
 
     def create_client_interface_future(self):
         future = Future()
@@ -148,11 +155,10 @@ class ROS2GuiApp(Node, QWidget):
         else:
             button.setStyleSheet("background-color: gray; color: white;")
 
-
     def check_hardware_status(self):
-        # Vérifie l'arduino
         arduino_ok = self.check_arduino_connection()
         cam_ok = self.check_camera_connection()
+        gantry_ok = self.check_gantry_connection()
 
         if "rotate_table" in self.control_buttons:
             self.set_button_state(self.control_buttons["rotate_table"]["start"], arduino_ok, "green" if arduino_ok else "red")
@@ -160,6 +166,9 @@ class ROS2GuiApp(Node, QWidget):
         if "camera_config" in self.control_buttons:
             self.set_button_state(self.control_buttons["camera_config"]["start"], cam_ok, "green" if cam_ok else "red")
 
+        if "gantry_config" in self.control_buttons:
+            self.set_button_state(self.control_buttons["gantry_config"]["start"], gantry_ok, "green" if gantry_ok else "red")
+    
     # -- PROCESS LAUNCHERS --
     def launch_talker(self):
         self.start_process("talker", [
@@ -192,39 +201,14 @@ class ROS2GuiApp(Node, QWidget):
         except Exception as e:
             print(f"[ERROR] Couldn't open serial port: {e}")
 
-
     def stop_table(self):
         self.stop_process("rotate_table", match="python3 rotate_table.py")
-
-
-    def launch_camera(self):
-        cam_ok = self.check_camera_connection()
-        if cam_ok:
-
-            self.start_process("camera", [
-                "gnome-terminal", "--", "bash", "-c",
-                "source /opt/ros/humble/setup.bash && ros2 launch realsense2_camera rs_launch.py"
-            ])
-            print("[INFO] Camera launch command sent.")
-            self.create_subscription(Image, '/camera/camera/color/image_raw', self.image_callback, 10)
-            self.timer.start(100)
-
-    def stop_camera(self):
-        self.stop_process("camera", match="ros2 launch realsense2_camera rs_launch.py")
-        self.timer.stop()
-        self.image_label.setText("📷 Camera stopped")
-        self.image_data = None
-        self.set_button_state(self.control_buttons["capture_photo"]["start"], False, "red")
-        self.set_button_state(self.control_buttons["capture_photo"]["stop"], False, "red")
 
     def open_camera_config(self):
         if not self.check_camera_connection():
             print("[WARN] Camera not detected.")
             return
 
-        # Lance le node ROS si pas déjà lancé
-        if not hasattr(self, "camera_subscription"):
-            self.launch_camera()
         self.camera_window = CameraConfigWindow(self, self.bridge)
         self.camera_window.show()
 
@@ -233,26 +217,15 @@ class ROS2GuiApp(Node, QWidget):
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             self.image_data = cv_image
         except Exception as e:
-            print("[ERROR] Failed to convert image:", e)
+            print(f"[ERROR] Failed to convert image: {e}")
+    
+    def open_gantry_config(self):
+        if not self.check_gantry_connection():
+            print("[WARN] Gantry CRI not detected.")
+            return
 
-    def update_image(self):
-        if self.image_data is not None:
-            rgb = cv2.cvtColor(self.image_data, cv2.COLOR_BGR2RGB)
-            h, w, ch = rgb.shape
-            qt_img = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(qt_img).scaled(self.image_label.width(), self.image_label.height())
-            self.image_label.setPixmap(pixmap)
-
-    def capture_photo(self):
-        if self.image_data is not None:
-            output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "img")
-            os.makedirs(output_dir, exist_ok=True)
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filepath = os.path.join(output_dir, f"capture_{timestamp}.png")
-            cv2.imwrite(filepath, self.image_data)
-            print(f"[✓] Photo saved at: {filepath}")
-        else:
-            print("[!] No image available — is the camera running?")
+        self.gantry_window = GantryConfigWindow()
+        self.gantry_window.show()
 
 class TableConfigWindow(QWidget):
     def __init__(self, serial_port):
@@ -343,12 +316,24 @@ class CameraConfigWindow(QWidget):
         layout.addWidget(self.image_label)
 
         btn_layout = QHBoxLayout()
+
+        self.launch_camera_btn = QPushButton("Démarrer la caméra")
+        self.launch_camera_btn.clicked.connect(self.launch_camera)
+        btn_layout.addWidget(self.launch_camera_btn)
+
+        self.stop_camera_btn = QPushButton("Arrêter la caméra")
+        self.stop_camera_btn.clicked.connect(self.stop_camera)
+        self.stop_camera_btn.setEnabled(False)
+        btn_layout.addWidget(self.stop_camera_btn)
+
         self.capture_btn = QPushButton("Capture d'écran")
         self.capture_btn.clicked.connect(self.capture_photo)
+        self.capture_btn.setEnabled(False)
         btn_layout.addWidget(self.capture_btn)
 
         self.start_video_btn = QPushButton("Démarrer vidéo")
         self.start_video_btn.clicked.connect(self.start_recording)
+        self.start_video_btn.setEnabled(False)
         btn_layout.addWidget(self.start_video_btn)
 
         self.stop_video_btn = QPushButton("Arrêter vidéo")
@@ -359,8 +344,34 @@ class CameraConfigWindow(QWidget):
         layout.addLayout(btn_layout)
         self.setLayout(layout)
 
+    def launch_camera(self):
+        if not hasattr(self.parent, "camera_subscription"):
+            self.parent.start_process("camera", [
+                "gnome-terminal", "--", "bash", "-c",
+                "source /opt/ros/humble/setup.bash && ros2 launch realsense2_camera rs_launch.py"
+            ])
+            print("[INFO] Camera launch command sent.")
+            self.parent.create_subscription(
+                Image, '/camera/camera/color/image_raw', self.parent.image_callback, 10
+            )
+            self.parent.timer.start(100)
+            self.launch_camera_btn.setEnabled(False)
+            self.stop_camera_btn.setEnabled(True)
+            self.capture_btn.setEnabled(True)
+            self.start_video_btn.setEnabled(True)
+
+    def stop_camera(self):
+        self.parent.stop_process("camera", match="ros2 launch realsense2_camera rs_launch.py")
+        self.parent.timer.stop()
+        self.image_label.setText("📷 Camera stopped")
+        self.image_data = None
+        self.launch_camera_btn.setEnabled(True)
+        self.stop_camera_btn.setEnabled(False)
+        self.capture_btn.setEnabled(False)
+        self.start_video_btn.setEnabled(False)
+        self.stop_video_btn.setEnabled(False)
+
     def update_image(self):
-        # Récupère l'image depuis le parent
         if self.parent.image_data is not None:
             rgb = cv2.cvtColor(self.parent.image_data, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb.shape
@@ -413,7 +424,80 @@ class CameraConfigWindow(QWidget):
             self.video_writer.release()
         event.accept()
 
+class GantryConfigWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Configuration Gantry")
+        self.setGeometry(250, 250, 400, 250)
+        self.controller = cri_lib.CRIController()
+        self.connected = self.controller.connect("127.0.0.1", 3921)
+        self.program_loaded = False
 
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        self.status = QLabel("Status: Disconnected" if not self.connected else "Status: Connected")
+        layout.addWidget(self.status)
+
+        self.program_input = QLineEdit()
+        self.program_input.setPlaceholderText("Chemin du programme XML")
+        layout.addWidget(self.program_input)
+
+        load_btn = QPushButton("Charger un programme")
+        load_btn.clicked.connect(self.load_program)
+        layout.addWidget(load_btn)
+
+        start_btn = QPushButton("Lancer le programme")
+        start_btn.clicked.connect(self.start_program)
+        layout.addWidget(start_btn)
+
+        stop_btn = QPushButton("Arrêter le programme")
+        stop_btn.clicked.connect(self.stop_program)
+        layout.addWidget(stop_btn)
+
+        self.setLayout(layout)
+
+    def load_program(self):
+        path = self.program_input.text()
+        if not path:
+            self.status.setText("❌ Chemin du programme manquant")
+            return
+        if not self.connected:
+            self.status.setText("❌ Non connecté au Gantry")
+            return
+        if self.controller.load_programm(path):
+            self.status.setText(f"✅ Programme chargé: {path}")
+            self.program_loaded = True
+        else:
+            self.status.setText("❌ Échec du chargement")
+
+    def start_program(self):
+        if not self.connected or not self.program_loaded:
+            self.status.setText("❌ Charger un programme d'abord")
+            return
+        if self.controller.start_programm():
+            self.status.setText("✅ Programme lancé")
+        else:
+            self.status.setText("❌ Échec du lancement")
+
+    def stop_program(self):
+        if not self.connected:
+            self.status.setText("❌ Non connecté au Gantry")
+            return
+        if self.controller.stop_programm():
+            self.status.setText("✅ Programme arrêté")
+        else:
+            self.status.setText("❌ Échec de l'arrêt")
+
+    def closeEvent(self, event):
+        try:
+            if self.connected:
+                self.controller.disable()
+                self.controller.close()
+        except Exception:
+            pass
+        event.accept()
 
 def main():
     rclpy.init()
