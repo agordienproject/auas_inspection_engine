@@ -137,7 +137,7 @@ class ROS2GuiApp(Node, QWidget):
     def check_gantry_connection(self):
         try:
             controller = cri_lib.CRIController()
-            connected = controller.connect("127.0.0.1", 3921)
+            connected = controller.connect("192.168.68.126", 3921)
             controller.close()
             return connected
         except Exception as e:
@@ -430,7 +430,7 @@ class GantryConfigWindow(QWidget):
         self.setWindowTitle("Configuration Gantry")
         self.setGeometry(250, 250, 400, 250)
         self.controller = cri_lib.CRIController()
-        self.connected = self.controller.connect("127.0.0.1", 3921)
+        self.connected = self.controller.connect("192.168.68.126", 3921)
         self.program_loaded = False
 
         self.init_ui()
@@ -459,6 +459,10 @@ class GantryConfigWindow(QWidget):
         self.setLayout(layout)
 
     def load_program(self):
+        self.controller.set_active_control(True)
+        self.controller.enable()
+        self.controller.wait_for_kinematics_ready(10)
+        self.controller.set_override(50.0)
         path = self.program_input.text()
         if not path:
             self.status.setText("❌ Chemin du programme manquant")
