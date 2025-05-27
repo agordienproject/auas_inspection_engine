@@ -134,16 +134,6 @@ class ROS2GuiApp(Node, QWidget):
             print(f"[ERROR] USB check failed: {e}")
             return False
 
-    def check_gantry_connection(self):
-        try:
-            controller = cri_lib.CRIController()
-            connected = controller.connect("192.168.68.126", 3921)
-            controller.close()
-            return connected
-        except Exception as e:
-            print(f"[ERROR] Gantry CRI connection failed: {e}")
-            return False
-
     def create_client_interface_future(self):
         future = Future()
         return future
@@ -158,7 +148,6 @@ class ROS2GuiApp(Node, QWidget):
     def check_hardware_status(self):
         arduino_ok = self.check_arduino_connection()
         cam_ok = self.check_camera_connection()
-        gantry_ok = self.check_gantry_connection()
 
         if "rotate_table" in self.control_buttons:
             self.set_button_state(self.control_buttons["rotate_table"]["start"], arduino_ok, "green" if arduino_ok else "red")
@@ -167,7 +156,8 @@ class ROS2GuiApp(Node, QWidget):
             self.set_button_state(self.control_buttons["camera_config"]["start"], cam_ok, "green" if cam_ok else "red")
 
         if "gantry_config" in self.control_buttons:
-            self.set_button_state(self.control_buttons["gantry_config"]["start"], gantry_ok, "green" if gantry_ok else "red")
+            # Toujours activé, couleur grise si tu veux montrer "non connecté"
+            self.set_button_state(self.control_buttons["gantry_config"]["start"], True, "gray")
     
     # -- PROCESS LAUNCHERS --
     def launch_talker(self):
@@ -220,10 +210,6 @@ class ROS2GuiApp(Node, QWidget):
             print(f"[ERROR] Failed to convert image: {e}")
     
     def open_gantry_config(self):
-        if not self.check_gantry_connection():
-            print("[WARN] Gantry CRI not detected.")
-            return
-
         self.gantry_window = GantryConfigWindow()
         self.gantry_window.show()
 
@@ -428,37 +414,103 @@ class GantryConfigWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Configuration Gantry")
-        self.setGeometry(250, 250, 400, 250)
-        self.controller = cri_lib.CRIController()
-        self.connected = self.controller.connect("192.168.68.126", 3921)
+        self.setGeometry(250, 250, 400, 300)
+        self.controller = None
+        self.connected = False
         self.program_loaded = False
 
         self.init_ui()
 
     def init_ui(self):
         layout = QVBoxLayout()
-        self.status = QLabel("Status: Disconnected" if not self.connected else "Status: Connected")
+        self.status = QLabel("Status: Disconnected")
         layout.addWidget(self.status)
 
-        self.program_input = QLineEdit()
+        # Champs IP et port
+        ip_port_layout = QHBoxLayout()
+        self.ip_input = QLineEdit("145.109.200.28")
+        self.ip_input.setPlaceholderText("Adresse IP")
+        self.port_input = QLineEdit("3921")
+        self.port_input.setPlaceholderText("Port")
+        ip_port_layout.addWidget(QLabel("IP:"))
+        ip_port_layout.addWidget(self.ip_input)
+        ip_port_layout.addWidget(QLabel("Port:"))
+        ip_port_layout.addWidget(self.port_input)
+        layout.addLayout(ip_port_layout)
+
+        # Bouton de connexion
+        self.connect_btn = QPushButton("Connexion")
+        self.connect_btn.clicked.connect(self.try_connect)
+        layout.addWidget(self.connect_btn)
+
+        # Champs programme et boutons
+        self.program_input = QLineEdit(r"C:\\iRC-igusRobotControl-V14\\Data\\Programs\\testGantryLG.xml")
         self.program_input.setPlaceholderText("Chemin du programme XML")
         layout.addWidget(self.program_input)
 
-        load_btn = QPushButton("Charger un programme")
-        load_btn.clicked.connect(self.load_program)
-        layout.addWidget(load_btn)
+        self.load_btn = QPushButton("Charger un programme")
+        self.load_btn.clicked.connect(self.load_program)
+        layout.addWidget(self.load_btn)
 
-        start_btn = QPushButton("Lancer le programme")
-        start_btn.clicked.connect(self.start_program)
-        layout.addWidget(start_btn)
+        self.start_btn = QPushButton("Lancer le programme")
+        self.start_btn.clicked.connect(self.start_program)
+        layout.addWidget(self.start_btn)
 
-        stop_btn = QPushButton("Arrêter le programme")
-        stop_btn.clicked.connect(self.stop_program)
-        layout.addWidget(stop_btn)
+        self.resume_btn = QPushButton("Pauser le programme")
+        self.resume_btn.clicked.connect(self.pause_program)
+        layout.addWidget(self.resume_btn)
+
+        self.stop_btn = QPushButton("Arrêter le programme")
+        self.stop_btn.clicked.connect(self.stop_program)
+        layout.addWidget(self.stop_btn)
 
         self.setLayout(layout)
+        self.set_connected_state(False)
+
+        # Essaye de se connecter automatiquement à l'ouverture
+        self.try_connect(auto=True)
+
+    def set_connected_state(self, connected):
+        self.connected = connected
+        self.load_btn.setEnabled(connected)
+        self.start_btn.setEnabled(connected)
+        self.stop_btn.setEnabled(connected)
+        if connected:
+            self.status.setText("✅ Connecté au Gantry")
+            self.status.setStyleSheet("color: green;")
+            self.connect_btn.setEnabled(False)
+        else:
+            self.status.setText("❌ Non connecté au Gantry")
+            self.status.setStyleSheet("color: red;")
+            self.connect_btn.setEnabled(True)
+
+    def try_connect(self, auto=False):
+        ip = self.ip_input.text().strip()
+        try:
+            port = int(self.port_input.text().strip())
+        except ValueError:
+            self.status.setText("❌ Port invalide")
+            self.status.setStyleSheet("color: red;")
+            return
+
+        if self.controller:
+            try:
+                self.controller.close()
+            except Exception:
+                pass
+
+        import cri_lib
+        self.controller = cri_lib.CRIController()
+        self.connected = self.controller.connect(ip, port)
+        self.set_connected_state(self.connected)
+        if not self.connected and not auto:
+            self.status.setText("❌ Connexion échouée")
+            self.status.setStyleSheet("color: red;")
 
     def load_program(self):
+        if not self.connected:
+            self.status.setText("❌ Non connecté au Gantry")
+            return
         self.controller.set_active_control(True)
         self.controller.enable()
         self.controller.wait_for_kinematics_ready(10)
@@ -466,9 +518,6 @@ class GantryConfigWindow(QWidget):
         path = self.program_input.text()
         if not path:
             self.status.setText("❌ Chemin du programme manquant")
-            return
-        if not self.connected:
-            self.status.setText("❌ Non connecté au Gantry")
             return
         if self.controller.load_programm(path):
             self.status.setText(f"✅ Programme chargé: {path}")
@@ -485,6 +534,18 @@ class GantryConfigWindow(QWidget):
         else:
             self.status.setText("❌ Échec du lancement")
 
+    def pause_program(self):
+        if not self.connected:
+            self.status.setText("❌ Non connecté au Gantry")
+            return
+        try:
+            if self.controller.pause_programm():
+                self.status.setText("✅ Programme pausé")
+            else:
+                self.status.setText("❌ Échec de la pause")
+        except Exception as e:
+            self.status.setText(f"❌ Erreur: {e}")
+    
     def stop_program(self):
         if not self.connected:
             self.status.setText("❌ Non connecté au Gantry")
@@ -496,7 +557,7 @@ class GantryConfigWindow(QWidget):
 
     def closeEvent(self, event):
         try:
-            if self.connected:
+            if self.controller and self.connected:
                 self.controller.disable()
                 self.controller.close()
         except Exception:
