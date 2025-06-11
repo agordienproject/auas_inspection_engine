@@ -428,9 +428,9 @@ class GantryConfigWindow(QWidget):
 
         # Champs IP et port
         ip_port_layout = QHBoxLayout()
-        self.ip_input = QLineEdit("145.109.200.28")
+        self.ip_input = QLineEdit("192.168.3.11")
         self.ip_input.setPlaceholderText("Adresse IP")
-        self.port_input = QLineEdit("3921")
+        self.port_input = QLineEdit("3920")
         self.port_input.setPlaceholderText("Port")
         ip_port_layout.addWidget(QLabel("IP:"))
         ip_port_layout.addWidget(self.ip_input)
@@ -442,6 +442,13 @@ class GantryConfigWindow(QWidget):
         self.connect_btn = QPushButton("Connexion")
         self.connect_btn.clicked.connect(self.try_connect)
         layout.addWidget(self.connect_btn)
+
+        # Bouton de Connexion
+        self.motor_btn = QPushButton("disabled")
+        self.motor_btn.setStyleSheet("background-color: red; color: white;")
+        self.motor_btn.setEnabled(False)
+        self.motor_btn.clicked.connect(self.toggle_motors)
+        layout.addWidget(self.motor_btn)
 
         # Champs programme et boutons
         self.program_input = QLineEdit(r"C:\\iRC-igusRobotControl-V14\\Data\\Programs\\testGantryLG.xml")
@@ -475,14 +482,21 @@ class GantryConfigWindow(QWidget):
         self.load_btn.setEnabled(connected)
         self.start_btn.setEnabled(connected)
         self.stop_btn.setEnabled(connected)
+        self.motor_btn.setEnabled(connected)
         if connected:
             self.status.setText("✅ Connecté au Gantry")
             self.status.setStyleSheet("color: green;")
             self.connect_btn.setEnabled(False)
+            # Optionnel : vérifier l’état moteur réel ici si possible
+            self.motor_enabled = False
+            self.update_motor_button()
         else:
             self.status.setText("❌ Non connecté au Gantry")
             self.status.setStyleSheet("color: red;")
             self.connect_btn.setEnabled(True)
+            self.motor_btn.setText("disabled")
+            self.motor_btn.setStyleSheet("background-color: red; color: white;")
+            self.motor_btn.setEnabled(False)
 
     def try_connect(self, auto=False):
         ip = self.ip_input.text().strip()
@@ -506,13 +520,33 @@ class GantryConfigWindow(QWidget):
         if not self.connected and not auto:
             self.status.setText("❌ Connexion échouée")
             self.status.setStyleSheet("color: red;")
+    
+    def update_motor_button(self):
+        if getattr(self, "motor_enabled", False):
+            self.motor_btn.setText("enabled")
+            self.motor_btn.setStyleSheet("background-color: green; color: white;")
+        else:
+            self.motor_btn.setText("disabled")
+            self.motor_btn.setStyleSheet("background-color: red; color: white;")
+
+    def toggle_motors(self):
+        if not self.connected:
+            return
+        if getattr(self, "motor_enabled", False):
+            ok = self.controller.disable()
+            if ok:
+                self.motor_enabled = False
+        else:
+            ok = self.controller.enable()
+            if ok:
+                self.motor_enabled = True
+        self.update_motor_button()
 
     def load_program(self):
         if not self.connected:
             self.status.setText("❌ Non connecté au Gantry")
             return
         self.controller.set_active_control(True)
-        self.controller.enable()
         self.controller.wait_for_kinematics_ready(10)
         self.controller.set_override(50.0)
         path = self.program_input.text()

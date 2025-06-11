@@ -1,3 +1,6 @@
 ros2gui-env
 img/*
 CRI-Python-Lib
+
+# Ignore Python cache files
+cri_lib/__pycache__/
