@@ -7,6 +7,7 @@ from . import utils
 from .gantry_config import GantryConfigWindow
 from .camera_config import CameraConfigWindow
 from .table_config import TableConfigWindow
+from .xarm_config import XarmConfigWindow
 
 class ROS2GuiApp(Node, QWidget):
     def __init__(self):
@@ -28,6 +29,7 @@ class ROS2GuiApp(Node, QWidget):
         layout.addLayout(self.make_config_button("Configure Rotating Table", self.open_table_config, key="rotate_table"))
         layout.addLayout(self.make_config_button("Configurer la caméra", self.open_camera_config, key="camera_config"))
         layout.addLayout(self.make_config_button("Configurer le Gantry", self.open_gantry_config, key="gantry_config"))
+        layout.addLayout(self.make_config_button("Configurer le Xarm", self.open_xarm_config, key="xarm_config"))
         self.setLayout(layout)
         QTimer.singleShot(1000, self.check_hardware_status)
 
@@ -128,3 +130,7 @@ class ROS2GuiApp(Node, QWidget):
     def open_gantry_config(self):
         self.gantry_window = GantryConfigWindow()
         self.gantry_window.show()
+
+    def open_xarm_config(self):
+        self.xarm_window = XarmConfigWindow(self)
+        self.xarm_window.show()
