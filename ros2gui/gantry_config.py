@@ -1,10 +1,10 @@
 import os
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QLineEdit, QPushButton, QComboBox
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QLineEdit, QPushButton, QComboBox, QCheckBox
 from . import utils
 
 class GantryConfigWindow(QWidget):
     PROGRAMS_FOLDER = "/home/agordien/Documents/gantry_programs"
-    PROGRAMS_REMOTE_PATH = r"C:\\iRC-igusRobotControl-V14\\Data\\Programs\\"
+    PROGRAMS_REMOTE_PATH = r"C:\\iRC-igusRobotControl-V14\Data\\Programs\\"
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Configuration Gantry")
@@ -52,8 +52,13 @@ class GantryConfigWindow(QWidget):
             self.program_combo.addItem("No programs found")
         layout.addWidget(QLabel("Choisir un programme:"))
         layout.addWidget(self.program_combo)
+        # Add custom program checkbox
+        self.custom_program_checkbox = QCheckBox("Choisir un programme personnalisé")
+        self.custom_program_checkbox.stateChanged.connect(self.toggle_custom_program)
+        layout.addWidget(self.custom_program_checkbox)
         self.program_input = QLineEdit(self.PROGRAMS_REMOTE_PATH)
         self.program_input.setPlaceholderText("Chemin du programme XML")
+        self.program_input.setReadOnly(False)
         layout.addWidget(self.program_input)
         self.load_btn = QPushButton("Charger un programme")
         self.load_btn.clicked.connect(self.load_program)
@@ -72,11 +77,23 @@ class GantryConfigWindow(QWidget):
         self.try_connect(auto=True)
         self.program_combo.currentIndexChanged.connect(self.update_program_input)
 
+    def toggle_custom_program(self, state):
+        if self.custom_program_checkbox.isChecked():
+            self.program_input.setReadOnly(False)
+        else:
+            self.program_input.setReadOnly(True)
+            self.update_program_input()
+
     def update_program_input(self):
+        if self.custom_program_checkbox.isChecked():
+            # Do not overwrite if custom mode is enabled
+            return
         idx = self.program_combo.currentIndex()
         if idx >= 0 and self.program_files:
             filename = self.program_files[idx]
-            self.program_input.setText(self.PROGRAMS_REMOTE_PATH + filename)
+            # Show only one backslash in the display
+            display_path = (self.PROGRAMS_REMOTE_PATH + filename).replace('\\\\', '\\')
+            self.program_input.setText(display_path)
         else:
             self.program_input.setText(self.PROGRAMS_REMOTE_PATH)
 
@@ -156,9 +173,13 @@ class GantryConfigWindow(QWidget):
             self.status.setText("❌ Aucun programme sélectionné")
             return
         program_name = self.program_files[idx]
-        full_path = self.PROGRAMS_REMOTE_PATH + program_name
-        if self.controller.load_programm(full_path):
-            self.status.setText(f"✅ Programme chargé: {full_path}")
+        local_path = os.path.join(self.PROGRAMS_FOLDER, program_name)
+        # Upload the file first
+        self.controller.upload_file(local_path, "Programs")
+        
+        # Now load by filename only
+        if self.controller.load_programm(program_name):
+            self.status.setText(f"✅ Programme chargé: {program_name}")
             self.program_loaded = True
         else:
             self.status.setText("❌ Échec du chargement")

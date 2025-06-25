@@ -8,6 +8,7 @@ from .gantry_config import GantryConfigWindow
 from .camera_config import CameraConfigWindow
 from .table_config import TableConfigWindow
 from .xarm_config import XarmConfigWindow
+from .scanner_config import ScannerConfigWindow
 
 class ROS2GuiApp(Node, QWidget):
     def __init__(self):
@@ -30,6 +31,7 @@ class ROS2GuiApp(Node, QWidget):
         layout.addLayout(self.make_config_button("Configurer la caméra", self.open_camera_config, key="camera_config"))
         layout.addLayout(self.make_config_button("Configurer le Gantry", self.open_gantry_config, key="gantry_config"))
         layout.addLayout(self.make_config_button("Configurer le Xarm", self.open_xarm_config, key="xarm_config"))
+        layout.addLayout(self.make_config_button("Configure scanCONTROL Scanner", self.open_scanner_config, key="scanner_config"))
         self.setLayout(layout)
         QTimer.singleShot(1000, self.check_hardware_status)
 
@@ -65,12 +67,15 @@ class ROS2GuiApp(Node, QWidget):
     def check_hardware_status(self):
         arduino_ok = utils.check_arduino_connection()
         cam_ok = utils.check_camera_connection()
+        scanner_ok = self.check_scanner_connection()
         if "rotate_table" in self.control_buttons:
             self.set_button_state(self.control_buttons["rotate_table"]["start"], arduino_ok, "green" if arduino_ok else "red")
         if "camera_config" in self.control_buttons:
             self.set_button_state(self.control_buttons["camera_config"]["start"], cam_ok, "green" if cam_ok else "red")
         if "gantry_config" in self.control_buttons:
             self.set_button_state(self.control_buttons["gantry_config"]["start"], True, "gray")
+        if "scanner_config" in self.control_buttons:
+            self.set_button_state(self.control_buttons["scanner_config"]["start"], scanner_ok, "green" if scanner_ok else "orange")
 
     def set_button_state(self, button, enabled, color):
         button.setEnabled(enabled)
@@ -134,3 +139,18 @@ class ROS2GuiApp(Node, QWidget):
     def open_xarm_config(self):
         self.xarm_window = XarmConfigWindow(self)
         self.xarm_window.show()
+
+    def open_scanner_config(self):
+        """Open the scanCONTROL scanner configuration window"""
+        self.scanner_window = ScannerConfigWindow()
+        self.scanner_window.show()
+
+    def check_scanner_connection(self):
+        """Check if scanCONTROL scanner SDK is available"""
+        try:
+            import sys
+            sys.path.insert(0, '/home/agordien/Documents/scanCONTROL-Linux-SDK-1-0-1/python_bindings')
+            import pylinllt as llt
+            return True
+        except ImportError:
+            return False

@@ -38,3 +38,25 @@ def check_camera_connection():
     except Exception as e:
         print(f"[ERROR] USB check failed: {e}")
         return False
+
+def check_scanner_connection():
+    """Check if scanCONTROL scanner SDK is available and potentially connected"""
+    try:
+        import sys
+        sys.path.insert(0, '/home/agordien/Documents/scanCONTROL-Linux-SDK-1-0-1/python_bindings')
+        import pylinllt as llt
+        
+        # Try to discover devices (quick check)
+        import ctypes as ct
+        available_interfaces = [ct.create_string_buffer(8) for i in range(6)]
+        available_interfaces_p = (ct.c_char_p * 6)(*map(ct.addressof, available_interfaces))
+        
+        ret = llt.get_device_interfaces(available_interfaces_p, len(available_interfaces))
+        return ret >= 0  # SDK available, device detection works
+        
+    except ImportError:
+        print("[WARN] scanCONTROL SDK not found")
+        return False
+    except Exception as e:
+        print(f"[WARN] Scanner check failed: {e}")
+        return False
