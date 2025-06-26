@@ -43,7 +43,7 @@ def check_scanner_connection():
     """Check if scanCONTROL scanner SDK is available and potentially connected"""
     try:
         import sys
-        sys.path.insert(0, '/home/agordien/Documents/scanCONTROL-Linux-SDK-1-0-1/python_bindings')
+        sys.path.insert(0, '/home/agordien/projects/auas_inspection_engine/scanCONTROL-Linux-SDK-1-0-1/python_bindings')
         import pylinllt as llt
         
         # Try to discover devices (quick check)

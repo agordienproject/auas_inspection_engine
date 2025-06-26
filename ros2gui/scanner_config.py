@@ -31,7 +31,7 @@ from matplotlib.figure import Figure
 import matplotlib.animation as animation
 
 # Add scanCONTROL SDK path
-sys.path.insert(0, '/home/agordien/Documents/scanCONTROL-Linux-SDK-1-0-1/python_bindings')
+sys.path.insert(0, '/home/agordien/projects/auas_inspection_engine/scanCONTROL-Linux-SDK-1-0-1/python_bindings')
 
 try:
     import pylinllt as llt
@@ -239,7 +239,7 @@ class ScannerController:
             raise ValueError(f"Error starting transfer: {ret}")
         
         self.is_measuring = True
-        time.sleep(0.5)  # Allow warm-up time
+        time.sleep(0.2)  # Allow warm-up time (like in working examples)
         return True
     
     def stop_measurement(self):
@@ -271,12 +271,15 @@ class ScannerController:
         if not self.is_connected or not self.is_measuring:
             return None, None, None
         
-        # Prepare data buffers
+        # Prepare data buffers - use numpy arrays with ctypes pointers like in examples
         profile_buffer = (ct.c_ubyte*(self.resolution*64))()
-        x = (ct.c_double * self.resolution)()
-        z = (ct.c_double * self.resolution)()
+        x = np.empty(self.resolution, dtype=float)
+        z = np.empty(self.resolution, dtype=float)
+        x_p = x.ctypes.data_as(ct.POINTER(ct.c_double))
+        z_p = z.ctypes.data_as(ct.POINTER(ct.c_double))
         intensities = (ct.c_ushort * self.resolution)()
         lost_profiles = ct.c_uint()
+        timestamp = (ct.c_ubyte * 16)()
         
         # Null pointers for data we don't need
         null_ptr_short = ct.POINTER(ct.c_ushort)()
@@ -288,25 +291,34 @@ class ScannerController:
                                        llt.TProfileConfig.PROFILE, ct.byref(lost_profiles))
             
             if ret != len(profile_buffer):
-                return None, None, None  # No data available
+                # Error -104 typically means "no data available" which is normal when no object is present
+                if ret == -104:
+                    return None, None, None  # No object in field of view
+                else:
+                    print(f"Scanner data acquisition error: {ret}")
+                    return None, None, None
             
-            # Convert to values
+            # Convert to values - use the numpy array pointers
             ret = llt.convert_profile_2_values(profile_buffer, len(profile_buffer), self.resolution, 
                                              llt.TProfileConfig.PROFILE, self.scanner_type, 0,
                                              null_ptr_short, intensities, null_ptr_short, 
-                                             x, z, null_ptr_int, null_ptr_int)
+                                             x_p, z_p, null_ptr_int, null_ptr_int)
             
-            if ret & llt.CONVERT_X == 0 or ret & llt.CONVERT_Z == 0:
+            # Check for successful conversion including intensity data
+            if ret & llt.CONVERT_X == 0 or ret & llt.CONVERT_Z == 0 or ret & llt.CONVERT_MAXIMUM == 0:
                 return None, None, None
             
-            # Convert to numpy arrays
-            x_data = np.array([x[i] for i in range(self.resolution)])
-            z_data = np.array([z[i] for i in range(self.resolution)])
+            # Extract timestamp (like in examples)
+            for i in range(16):
+                timestamp[i] = profile_buffer[self.resolution * 64 - 16 + i]
+            
+            # Convert intensity array to numpy
             intensity_data = np.array([intensities[i] for i in range(self.resolution)])
             
-            return x_data, z_data, intensity_data
+            return x.copy(), z.copy(), intensity_data
             
-        except Exception:
+        except Exception as e:
+            # Uncomment for debugging: print(f"Error in acquire_profile: {e}")
             return None, None, None
     
     def disconnect(self):

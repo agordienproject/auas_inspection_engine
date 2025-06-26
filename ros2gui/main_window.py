@@ -149,7 +149,7 @@ class ROS2GuiApp(Node, QWidget):
         """Check if scanCONTROL scanner SDK is available"""
         try:
             import sys
-            sys.path.insert(0, '/home/agordien/Documents/scanCONTROL-Linux-SDK-1-0-1/python_bindings')
+            sys.path.insert(0, '/home/agordien/projects/auas_inspection_engine/scanCONTROL-Linux-SDK-1-0-1/python_bindings')
             import pylinllt as llt
             return True
         except ImportError:
