@@ -1,0 +1,29 @@
+inspection_process:
+  stages:
+    - name: "Pre-Inspection"
+      duration: "30m"
+      tasks:
+        - "Check equipment readiness"
+        - "Review previous inspection reports"
+    - name: "On-Site Inspection"
+      duration: "2h"
+      tasks:
+        - "Conduct visual inspection"
+        - "Perform functional tests"
+        - "Document findings"
+    - name: "Post-Inspection"
+      duration: "1h"
+      tasks:
+        - "Compile inspection report"
+        - "Submit findings to management"
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "your_username"
+  password: "your_password"
+  dbname: "inspection_db"
+
+output:
+  base_directory: "/path/to/output"
+  date_format: "%Y-%m-%d"

@@ -1,0 +1,5 @@
+2025-07-01 16:55:03,907 - __main__ - INFO - Starting Scenario Inspector
+2025-07-01 16:55:04,191 - __main__ - ERROR - Application error: 'LoginDialog' object has no attribute 'setup_ui'
+2025-07-01 16:56:23,065 - __main__ - INFO - Starting Scenario Inspector
+2025-07-01 16:56:41,848 - database.connection - WARNING - Authentication failed for user agordien@hva.nl
+2025-07-01 16:56:45,278 - __main__ - INFO - Login cancelled by user

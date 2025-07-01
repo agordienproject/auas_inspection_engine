@@ -1,0 +1,43 @@
+database:
+  host: "localhost"
+  port: 5432
+  username: "inspection_user"
+  password: "your_password"
+  database: "inspection_db"
+
+systems:
+  scanControl:
+    ip: "192.168.1.100"
+    port: 8080
+    timeout: 30
+    type: "laser_scanner"
+  camera:
+    ip: "192.168.1.101"
+    port: 8081
+    timeout: 15
+    type: "camera_system"
+
+ftp:
+  server: "ftp://inspection-server"
+  username: "ftp_user"
+  password: "ftp_password"
+  base_path: "/aircraft"
+
+output:
+  base_directory: "./output"
+  date_format: "%Y-%m-%d"
+  time_format: "%Y-%m-%d_%H-%M-%S"
+
+logging:
+  level: "INFO"
+  file: "logs/scenario_inspector.log"
+  console: true
+
+security:
+  bcrypt_rounds: 12
+  session_timeout: 3600  # seconds
+
+gui:
+  window_title: "AUAS Scenario Inspector"
+  theme: "default"
+  default_geometry: "1200x800"
