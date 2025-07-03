@@ -1,9 +1,6 @@
 ros2gui-env
 img/*
 
-# Ignore Python cache files
-__pycache__/*
-
 scanCONTROL-Linux-SDK-1-0-1
 cri_lib/__pycache__/__init__.cpython-310.pyc
 cri_lib/__pycache__/cri_controller.cpython-310.pyc
@@ -18,3 +15,8 @@ ros2gui/__pycache__/xarm_config.cpython-310.pyc
 
 # Ignore pycache files
 **/__pycache__/*
+
+# Ignore log files
+*.log
+logs/
+**/logs/
