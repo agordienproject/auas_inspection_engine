@@ -8,22 +8,14 @@ import logging
 from typing import Dict, Any, Optional
 
 from systems.base_system import BaseSystem
-
-# Add scanCONTROL SDK path
-sys.path.insert(0, '/home/agordien/projects/auas_inspection_engine/scanCONTROL-Linux-SDK-1-0-1/python_bindings')
-
-try:
-    import pylinllt as llt
-    SDK_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: scanCONTROL SDK not available: {e}")
-    SDK_AVAILABLE = False
+from utils.scanner_sdk_loader import load_scanner_sdk_from_config, get_scanner_sdk, is_scanner_sdk_available
 
 
 class ScannerController:
     """Controller class for scanCONTROL sensor operations (from GUI application)"""
     
-    def __init__(self):
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
         self.hLLT = None
         self.scanner_type = ct.c_int(0)
         self.resolution = 640
@@ -31,10 +23,17 @@ class ScannerController:
         self.is_measuring = False
         self.available_devices = []
         
+        # Initialize SDK with path from config
+        load_scanner_sdk_from_config(config)
+        
     def discover_devices(self):
         """Discover available scanCONTROL devices"""
-        if not SDK_AVAILABLE:
+        if not is_scanner_sdk_available():
             return ["192.168.3.2"]  # Fallback for testing
+        
+        llt = get_scanner_sdk()
+        if not llt:
+            return ["192.168.3.2"]
             
         try:
             available_interfaces = [ct.create_string_buffer(8) for i in range(6)]
@@ -58,7 +57,12 @@ class ScannerController:
     
     def connect(self, device_interface="192.168.3.2"):
         """Connect to scanCONTROL device"""
-        if not SDK_AVAILABLE:
+        if not is_scanner_sdk_available():
+            self.is_connected = True
+            return True
+        
+        llt = get_scanner_sdk()
+        if not llt:
             self.is_connected = True
             return True
             
@@ -94,6 +98,13 @@ class ScannerController:
     
     def _get_scanner_info(self):
         """Get scanner type and available resolutions"""
+        if not is_scanner_sdk_available():
+            return
+        
+        llt = get_scanner_sdk()
+        if not llt:
+            return
+            
         # Get scanner type
         ret = llt.get_llt_type(self.hLLT, ct.byref(self.scanner_type))
         if ret < 1:
@@ -115,7 +126,12 @@ class ScannerController:
     
     def disconnect(self):
         """Disconnect from the scanner"""
-        if not SDK_AVAILABLE:
+        if not is_scanner_sdk_available():
+            self.is_connected = False
+            return True
+        
+        llt = get_scanner_sdk()
+        if not llt:
             self.is_connected = False
             return True
             
@@ -148,13 +164,21 @@ class ScannerSystem(BaseSystem):
     
     def __init__(self, name: str, config: Dict[str, Any]):
         super().__init__(name, config)
-        self.scanner_controller = ScannerController()
+        self.scanner_controller = ScannerController(config)
         self.logger = logging.getLogger(__name__)
         
     def initialize(self) -> bool:
         """Initialize the scanner system"""
         try:
             self.logger.info(f"Initializing scanner system: {self.name}")
+            
+            # Check if SDK was loaded successfully
+            llt_path = self.config.get('llt_path')
+            if llt_path and not is_scanner_sdk_available():
+                self.logger.warning(f"Scanner SDK not available at configured path: {llt_path}")
+            elif is_scanner_sdk_available():
+                self.logger.info(f"Scanner SDK loaded successfully from: {llt_path}")
+            
             return True
         except Exception as e:
             self.logger.error(f"Failed to initialize scanner system: {e}")
@@ -192,13 +216,27 @@ class ScannerSystem(BaseSystem):
     def test_connection(self) -> Dict[str, Any]:
         """Test scanner connection"""
         try:
+            # First check if SDK is available
+            if not is_scanner_sdk_available():
+                llt_path = self.config.get('llt_path', 'Not configured')
+                return {
+                    'status': 'not_available',
+                    'message': f'Scanner SDK not available at path: {llt_path}',
+                    'details': {
+                        'llt_path': llt_path,
+                        'sdk_available': False
+                    }
+                }
+            
             if self.scanner_controller.test_connection():
                 return {
                     'status': 'available',
                     'message': 'Scanner connected and ready',
                     'details': {
                         'resolution': self.scanner_controller.resolution,
-                        'scanner_type': self.scanner_controller.scanner_type.value
+                        'scanner_type': self.scanner_controller.scanner_type.value,
+                        'sdk_available': True,
+                        'llt_path': self.config.get('llt_path', 'N/A')
                     }
                 }
             else:
@@ -209,19 +247,29 @@ class ScannerSystem(BaseSystem):
                         'message': 'Scanner connection established',
                         'details': {
                             'resolution': self.scanner_controller.resolution,
-                            'scanner_type': self.scanner_controller.scanner_type.value
+                            'scanner_type': self.scanner_controller.scanner_type.value,
+                            'sdk_available': True,
+                            'llt_path': self.config.get('llt_path', 'N/A')
                         }
                     }
                 else:
                     return {
                         'status': 'not_available',
-                        'message': 'Scanner connection failed'
+                        'message': 'Scanner connection failed',
+                        'details': {
+                            'sdk_available': True,
+                            'llt_path': self.config.get('llt_path', 'N/A')
+                        }
                     }
         except Exception as e:
             self.logger.error(f"Scanner connection test failed: {e}")
             return {
                 'status': 'error',
-                'message': f'Scanner test error: {str(e)}'
+                'message': f'Scanner test error: {str(e)}',
+                'details': {
+                    'sdk_available': is_scanner_sdk_available(),
+                    'llt_path': self.config.get('llt_path', 'N/A')
+                }
             }
     
     def execute_step(self, step_config: Dict[str, Any]) -> Dict[str, Any]:

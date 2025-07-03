@@ -8,7 +8,7 @@ from systems.base_system import BaseSystem
 from systems.scanner_system import ScannerSystem
 from systems.gantry_system import GantrySystem
 from systems.table_system import TableSystem
-from systems.camera_system_updated import CameraSystem
+from systems.camera_system import CameraSystem
 
 
 class SystemManager:
@@ -39,7 +39,7 @@ class SystemManager:
         """Create a system instance based on its type"""
         system_type = system_config.get('type', '').lower()
         
-        if system_type == 'laser_scanner' or system_name.lower() == 'scancontrol':
+        if system_type == 'scanner_system' or system_name.lower() == 'scancontrol':
             return ScannerSystem(system_name, system_config)
         elif system_type == 'camera_system' or system_name.lower() == 'camera':
             return CameraSystem(system_name, system_config)

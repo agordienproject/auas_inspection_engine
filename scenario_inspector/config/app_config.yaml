@@ -8,9 +8,10 @@ database:
 systems:
   scanControl:
     connection_type: "tcp"
+    llt_path: "/home/agordien/projects/auas_inspection_engine/scanCONTROL-Linux-SDK-1-0-1/python_bindings"
     ip: "192.168.3.2"
     timeout: 30
-    type: "laser_scanner"
+    type: "scanner_system"
   camera:
     connection_type: "usb"
     device_id: "Intel Corp"
