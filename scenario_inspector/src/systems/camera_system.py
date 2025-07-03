@@ -150,6 +150,12 @@ class CameraSystem(BaseSystem):
         super().__init__(name, config)
         self.camera_controller = CameraController()
         self.logger = logging.getLogger(__name__)
+        self.current_inspection_folder = None  # Will be set by system manager
+        
+    def set_inspection_folder(self, folder_path: str):
+        """Set the current inspection folder path for output"""
+        self.current_inspection_folder = folder_path
+        self.logger.info(f"Camera system inspection folder set to: {folder_path}")
         
     def initialize(self) -> bool:
         """Initialize the camera system"""
@@ -237,12 +243,19 @@ class CameraSystem(BaseSystem):
                     raise ConnectionError("Cannot connect to camera")
             
             # Execute the step based on step configuration
-            action = step_config.get('action', 'capture')
+            action = step_config.get('action', 'take_photo')
             
-            if action == 'capture':
-                return self._capture_image(step_config)
+            if action == 'take_photo':
+                return self._take_photo(step_config)
+            elif action == 'take_video':
+                return self._take_video(step_config)
+            elif action == 'show_camera':
+                return self._show_camera(step_config)
+            # Legacy support for old action names
+            elif action == 'capture':
+                return self._take_photo(step_config)
             elif action == 'start_recording':
-                return self._start_recording(step_config)
+                return self._take_video(step_config)
             elif action == 'stop_recording':
                 return self._stop_recording(step_config)
             else:
@@ -252,9 +265,27 @@ class CameraSystem(BaseSystem):
             self.logger.error(f"Camera step execution failed: {e}")
             raise
     
-    def _capture_image(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Capture a single image"""
-        self.logger.info("Capturing image")
+    def _get_output_path(self, step_config: Dict[str, Any], default_filename: str) -> str:
+        """Determine the output path based on step configuration"""
+        path_config = step_config.get('path', 'classic')
+        
+        if path_config == 'classic':
+            # Use the inspection folder if available
+            if self.current_inspection_folder:
+                output_dir = os.path.join(self.current_inspection_folder, step_config.get('name', 'camera_data'))
+            else:
+                # Fallback to default output directory
+                output_dir = os.path.join('./output', 'camera_data')
+        else:
+            # Use custom path
+            output_dir = path_config
+        
+        os.makedirs(output_dir, exist_ok=True)
+        return os.path.join(output_dir, default_filename)
+    
+    def _take_photo(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Take a single photo"""
+        self.logger.info("Taking photo")
         
         # Start camera if not already capturing
         if not self.camera_controller.capturing:
@@ -262,31 +293,164 @@ class CameraSystem(BaseSystem):
             time.sleep(2)  # Wait for camera to stabilize
         
         # Generate output path
-        output_dir = step_config.get('output_dir', './output/images')
-        os.makedirs(output_dir, exist_ok=True)
-        
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        image_name = step_config.get('image_name', f'capture_{timestamp}.png')
-        output_path = os.path.join(output_dir, image_name)
+        default_filename = f'photo_{timestamp}.jpg'
+        output_path = self._get_output_path(step_config, default_filename)
         
         try:
             saved_path = self.camera_controller.capture_image(output_path)
             
-            return {
+            result = {
                 'status': 'success',
-                'message': 'Image captured successfully',
+                'message': 'Photo captured successfully',
                 'data': {
                     'image_path': saved_path,
+                    'timestamp': self.get_timestamp(),
+                    'action': 'take_photo'
+                }
+            }
+            
+            # Add file saving info if specified
+            if step_config.get('saving_file', False):
+                result['file_saved'] = True
+                result['output_path'] = saved_path
+            
+            return result
+            
+        except Exception as e:
+            raise RuntimeError(f"Photo capture failed: {e}")
+    
+    def _take_video(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Take a video with specified recording time"""
+        self.logger.info("Starting video recording")
+        
+        recording_time = step_config.get('recording_time', 10)  # Default 10 seconds
+        parameters = step_config.get('parameters', {})
+        resolution = parameters.get('resolution', '1920x1080')
+        fps = parameters.get('fps', 30)
+        
+        # Generate output path
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f'video_{timestamp}.mp4'
+        output_path = self._get_output_path(step_config, default_filename)
+        
+        try:
+            # Start camera
+            success = self.camera_controller.start_camera()
+            if not success:
+                raise RuntimeError("Failed to start camera for recording")
+            
+            # Record video for specified time using OpenCV
+            saved_path = self._record_video_opencv(output_path, recording_time, resolution, fps)
+            
+            result = {
+                'status': 'success',
+                'message': f'Video recorded successfully for {recording_time} seconds',
+                'data': {
+                    'video_path': saved_path,
+                    'recording_time': recording_time,
+                    'resolution': resolution,
+                    'fps': fps,
+                    'timestamp': self.get_timestamp(),
+                    'action': 'take_video'
+                }
+            }
+            
+            # Add file saving info if specified
+            if step_config.get('saving_file', False):
+                result['file_saved'] = True
+                result['output_path'] = saved_path
+            
+            return result
+            
+        except Exception as e:
+            raise RuntimeError(f"Video recording failed: {e}")
+    
+    def _show_camera(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Enable camera in the GUI (show live feed)"""
+        self.logger.info("Showing camera in GUI")
+        
+        try:
+            # Start camera if not already capturing
+            if not self.camera_controller.capturing:
+                success = self.camera_controller.start_camera()
+                if not success:
+                    raise RuntimeError("Failed to start camera for GUI display")
+            
+            # For GUI integration, this would typically signal the GUI to show camera feed
+            # For now, we'll just ensure the camera is running
+            
+            return {
+                'status': 'success',
+                'message': 'Camera enabled in GUI',
+                'data': {
+                    'action': 'show_camera',
+                    'camera_status': 'active',
                     'timestamp': self.get_timestamp()
                 }
             }
             
         except Exception as e:
-            raise RuntimeError(f"Image capture failed: {e}")
+            raise RuntimeError(f"Failed to show camera in GUI: {e}")
+    
+    def _record_video_opencv(self, output_path: str, duration: int, resolution: str, fps: int) -> str:
+        """Record video using OpenCV"""
+        try:
+            # Parse resolution
+            width, height = map(int, resolution.split('x'))
+            
+            # Initialize video capture
+            cap = cv2.VideoCapture(0)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            cap.set(cv2.CAP_PROP_FPS, fps)
+            
+            if not cap.isOpened():
+                raise RuntimeError("Cannot open camera for video recording")
+            
+            # Define codec and create VideoWriter
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            
+            start_time = time.time()
+            frame_count = 0
+            expected_frames = duration * fps
+            
+            self.logger.info(f"Recording video: {duration}s at {fps}fps ({expected_frames} frames)")
+            
+            while (time.time() - start_time) < duration:
+                ret, frame = cap.read()
+                if not ret:
+                    self.logger.warning("Failed to read frame, continuing...")
+                    continue
+                
+                out.write(frame)
+                frame_count += 1
+                
+                # Optional: Display progress
+                if frame_count % (fps * 2) == 0:  # Every 2 seconds
+                    elapsed = time.time() - start_time
+                    self.logger.info(f"Recording... {elapsed:.1f}s / {duration}s")
+            
+            # Release everything
+            cap.release()
+            out.release()
+            
+            self.logger.info(f"Video recording completed: {frame_count} frames, saved to {output_path}")
+            return output_path
+            
+        except Exception as e:
+            self.logger.error(f"Video recording error: {e}")
+            raise
+    
+    # Legacy method for backward compatibility
+    def _capture_image(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Legacy method - redirects to _take_photo"""
+        return self._take_photo(step_config)
     
     def _start_recording(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Start video recording"""
-        self.logger.info("Starting video recording")
+        """Legacy method - start video recording"""
+        self.logger.info("Starting video recording (legacy method)")
         
         success = self.camera_controller.start_camera()
         if not success:
@@ -302,8 +466,8 @@ class CameraSystem(BaseSystem):
         }
     
     def _stop_recording(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Stop video recording"""
-        self.logger.info("Stopping video recording")
+        """Legacy method - stop video recording"""
+        self.logger.info("Stopping video recording (legacy method)")
         
         success = self.camera_controller.stop_camera()
         if not success:

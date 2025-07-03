@@ -14,6 +14,12 @@ class BaseSystem(ABC):
         self.config = config
         self.logger = logging.getLogger(f"system.{name}")
         self.is_initialized = False
+        self.current_inspection_folder = None
+    
+    def set_inspection_folder(self, folder_path: str):
+        """Set the current inspection folder path for output"""
+        self.current_inspection_folder = folder_path
+        self.logger.debug(f"Inspection folder set to: {folder_path}")
         
     @abstractmethod
     def initialize(self) -> bool:

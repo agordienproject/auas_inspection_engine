@@ -9,6 +9,7 @@ from systems.scanner_system import ScannerSystem
 from systems.gantry_system import GantrySystem
 from systems.table_system import TableSystem
 from systems.camera_system import CameraSystem
+from utils.file_manager import FileManager
 
 
 class SystemManager:
@@ -18,6 +19,12 @@ class SystemManager:
         self.config_manager = config_manager
         self.logger = logging.getLogger(__name__)
         self.systems: Dict[str, BaseSystem] = {}
+        self.current_inspection_folder = None
+        
+        # Initialize file manager
+        output_dir = config_manager.config.get('application', {}).get('output_directory', './output')
+        self.file_manager = FileManager(output_dir)
+        
         self._initialize_systems()
         
     def _initialize_systems(self):
@@ -50,6 +57,47 @@ class SystemManager:
         else:
             self.logger.warning(f"Unknown system type: {system_type} for system: {system_name}")
             return None
+    
+    def create_inspection_folder(self, program_data: Dict[str, Any]) -> str:
+        """Create inspection folder for the current program execution"""
+        try:
+            # Extract program information
+            program_name = program_data.get('name', 'unknown_program')
+            piece_info = program_data.get('piece_info', {})
+            piece_name = piece_info.get('name_piece', 'unknown_piece')
+            ref_piece = piece_info.get('ref_piece', 'unknown_ref')
+            
+            # Create inspection folder
+            inspection_folder = self.file_manager.create_inspection_folder(
+                program_name, piece_name, ref_piece
+            )
+            
+            # Set the current inspection folder
+            self.current_inspection_folder = inspection_folder
+            
+            # Notify all systems about the inspection folder
+            self._set_inspection_folder_for_systems(inspection_folder)
+            
+            self.logger.info(f"Created inspection folder: {inspection_folder}")
+            return inspection_folder
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create inspection folder: {e}")
+            raise
+    
+    def _set_inspection_folder_for_systems(self, folder_path: str):
+        """Set the inspection folder path for all systems that support it"""
+        for system_name, system in self.systems.items():
+            try:
+                if hasattr(system, 'set_inspection_folder'):
+                    system.set_inspection_folder(folder_path)
+                    self.logger.debug(f"Set inspection folder for {system_name}")
+            except Exception as e:
+                self.logger.warning(f"Failed to set inspection folder for {system_name}: {e}")
+    
+    def get_current_inspection_folder(self) -> Optional[str]:
+        """Get the current inspection folder path"""
+        return self.current_inspection_folder
             
     def execute_step(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a step on the appropriate system"""

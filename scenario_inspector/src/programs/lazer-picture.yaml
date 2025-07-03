@@ -16,7 +16,7 @@ program:
           parameters:
             param1: 1300
             param2: "ex"
-          mode: "recording_data"
+          action: "recording_data"
           recording_time: 20
           saving_file: true
           path: "scan_data"
@@ -27,7 +27,7 @@ program:
           parameters:
             resolution: "1920x1080"
             fps: 30
-          mode: "take_video"
+          action: "take_video"
           recording_time: 20
           saving_file: true
-          path: "video_data"
+          path: "classic"
