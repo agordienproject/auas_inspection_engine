@@ -1,5 +1,5 @@
 """
-Scenario Inspector - Main Entry Point
+AUAS Inspection Engine - Main Entry Point
 """
 import sys
 import os
@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import QApplication
 # Add the src directory to Python path to enable absolute imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gui.main_window import ScenarioInspectorWindow
+from gui.main_window import InspectionMainWindow
 from config.config_manager import ConfigManager
 from auth.login import LoginDialog
 
@@ -58,7 +58,7 @@ def main():
         logger.info(f"User {authenticated_user.pseudo} logged in successfully")
         
         # Create and show main window
-        main_window = ScenarioInspectorWindow(authenticated_user)
+        main_window = InspectionMainWindow(authenticated_user)
         main_window.show()
         
         # Start application event loop
@@ -70,38 +70,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-from scenario_inspector.database.connection import DatabaseConnection
-from scenario_inspector.inspector.inspection_engine import InspectionEngine
-
-def main():
-    rclpy.init()
-    app = QApplication(sys.argv)
-
-    # Load configuration
-    config_manager = ConfigManager('config/config.yaml')
-    config = config_manager.load_config()
-
-    # Initialize database connection
-    db_connection = DatabaseConnection(config['database'])
-    
-    # User authentication
-    login_dialog = LoginDialog()
-    if not login_dialog.exec_():
-        sys.exit()
-
-    # Start the inspection process
-    inspection_engine = InspectionEngine(config['inspection'])
-    inspection_engine.start()
-
-    gui = ROS2GuiApp()
-    gui.show()
-
-    # Start ROS 2 spinning in a background thread
-    from threading import Thread
-    spin_thread = Thread(target=rclpy.spin, args=(gui,), daemon=True)
-    spin_thread.start()
-
-    sys.exit(app.exec_())
-
-if __name__ == "__main__":
-    main()

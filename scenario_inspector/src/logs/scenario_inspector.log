@@ -1,0 +1,66 @@
+2025-07-03 17:13:33,874 - __main__ - INFO - Starting Scenario Inspector
+2025-07-03 17:13:41,888 - __main__ - INFO - Login cancelled by user
+2025-07-03 17:19:58,755 - __main__ - INFO - Starting Scenario Inspector
+2025-07-03 17:20:10,588 - __main__ - INFO - Login cancelled by user
+2025-07-03 17:27:22,974 - __main__ - INFO - Starting Scenario Inspector
+2025-07-03 17:27:31,608 - __main__ - INFO - User agordien logged in successfully
+2025-07-03 17:27:31,619 - system.scanControl - INFO - Initializing ScanControl at 192.168.1.100
+2025-07-03 17:27:32,621 - system.scanControl - INFO - ScanControl system initialized successfully
+2025-07-03 17:27:32,621 - systems.system_manager - INFO - System scanControl initialized successfully
+2025-07-03 17:27:32,621 - system.camera - INFO - Initializing Camera at 192.168.1.101
+2025-07-03 17:27:33,121 - system.camera - INFO - Camera system initialized successfully
+2025-07-03 17:27:33,121 - systems.system_manager - INFO - System camera initialized successfully
+2025-07-03 18:25:43,300 - __main__ - INFO - Starting Scenario Inspector
+2025-07-03 18:25:54,946 - __main__ - INFO - User agordien logged in successfully
+2025-07-03 18:25:54,953 - system.scanControl - INFO - Initializing ScanControl at 192.168.1.100
+2025-07-03 18:25:55,954 - system.scanControl - INFO - ScanControl system initialized successfully
+2025-07-03 18:25:55,954 - systems.system_manager - INFO - System scanControl initialized successfully
+2025-07-03 18:25:55,954 - system.camera - INFO - Initializing Camera at 192.168.1.101
+2025-07-03 18:25:56,455 - system.camera - INFO - Camera system initialized successfully
+2025-07-03 18:25:56,455 - systems.system_manager - INFO - System camera initialized successfully
+2025-07-03 18:39:25,775 - __main__ - INFO - Starting Scenario Inspector
+2025-07-03 18:39:32,529 - __main__ - INFO - User agordien logged in successfully
+2025-07-03 18:39:32,533 - system.scanControl - INFO - Initializing ScanControl at 192.168.1.100
+2025-07-03 18:39:33,534 - system.scanControl - INFO - ScanControl system initialized successfully
+2025-07-03 18:39:33,534 - systems.system_manager - INFO - System scanControl initialized successfully
+2025-07-03 18:39:33,534 - system.camera - INFO - Initializing Camera at 192.168.1.101
+2025-07-03 18:39:34,035 - system.camera - INFO - Camera system initialized successfully
+2025-07-03 18:39:34,035 - systems.system_manager - INFO - System camera initialized successfully
+2025-07-03 18:39:59,980 - system.scanControl - INFO - Initializing ScanControl at 192.168.1.100
+2025-07-03 18:40:00,981 - system.scanControl - INFO - ScanControl system initialized successfully
+2025-07-03 18:40:00,981 - systems.system_manager - INFO - System scanControl initialized successfully
+2025-07-03 18:40:00,981 - system.camera - INFO - Initializing Camera at 192.168.1.101
+2025-07-03 18:40:01,787 - system.camera - INFO - Camera system initialized successfully
+2025-07-03 18:40:01,787 - systems.system_manager - INFO - System camera initialized successfully
+2025-07-03 18:40:01,793 - systems.system_manager - INFO - Executing step on system: scanControl
+2025-07-03 18:40:01,794 - system.scanControl - INFO - Executing ScanControl step: lazer
+2025-07-03 18:40:01,794 - system.scanControl - INFO - Mode: recording_data, Recording time: 20s
+2025-07-03 18:40:01,794 - system.scanControl - INFO - Starting data recording scan
+2025-07-03 19:06:19,505 - __main__ - INFO - Starting Scenario Inspector
+2025-07-03 19:06:26,933 - __main__ - INFO - User agordien logged in successfully
+2025-07-03 19:06:26,937 - systems.scanner_system - INFO - Initializing scanner system: scanControl
+2025-07-03 19:06:26,937 - systems.system_manager - INFO - System scanControl initialized successfully
+2025-07-03 19:06:26,937 - systems.camera_system_updated - INFO - Initializing camera system: camera
+2025-07-03 19:06:26,937 - systems.system_manager - INFO - System camera initialized successfully
+2025-07-03 19:06:26,937 - systems.table_system - INFO - Initializing table system: table
+2025-07-03 19:06:26,937 - systems.system_manager - INFO - System table initialized successfully
+2025-07-03 19:06:26,938 - systems.gantry_system - INFO - Initializing gantry system: gantry
+2025-07-03 19:06:26,938 - systems.system_manager - INFO - System gantry initialized successfully
+2025-07-03 19:06:34,205 - systems.system_manager - INFO - Testing connection for system: scanControl
+2025-07-03 19:06:34,205 - systems.scanner_system - INFO - Attempting to connect to scanner at 192.168.3.2
+2025-07-03 19:06:35,208 - systems.scanner_system - ERROR - Scanner connection error: Error connecting to device: -301
+2025-07-03 19:06:35,208 - systems.system_manager - INFO - Testing connection for system: camera
+2025-07-03 19:06:35,208 - systems.camera_system_updated - INFO - Attempting to connect to camera: Intel Corp
+2025-07-03 19:06:35,277 - systems.camera_system_updated - ERROR - Failed to connect to camera
+2025-07-03 19:06:35,277 - systems.system_manager - INFO - Testing connection for system: table
+2025-07-03 19:06:35,277 - systems.table_system - INFO - Attempting to connect to table at /dev/ttyUSB0 (baudrate: 9600)
+2025-07-03 19:06:35,277 - systems.table_system - ERROR - Table connection error: [Errno 2] could not open port /dev/ttyUSB0: [Errno 2] No such file or directory: '/dev/ttyUSB0'
+2025-07-03 19:06:35,277 - systems.system_manager - INFO - Testing connection for system: gantry
+2025-07-03 19:06:35,277 - systems.gantry_system - INFO - Attempting to connect to gantry at 192.168.3.11:3920
+2025-07-03 19:06:35,277 - systems.gantry_system - INFO - Gantry connected successfully
+2025-07-03 19:06:35,431 - systems.scanner_system - INFO - Attempting to connect to scanner at 192.168.3.2
+2025-07-03 19:06:36,434 - systems.scanner_system - ERROR - Scanner connection error: Error connecting to device: -301
+2025-07-03 19:06:36,999 - systems.camera_system_updated - INFO - Attempting to connect to camera: Intel Corp
+2025-07-03 19:06:37,038 - systems.camera_system_updated - ERROR - Failed to connect to camera
+2025-07-03 19:06:37,540 - systems.table_system - INFO - Attempting to connect to table at /dev/ttyUSB0 (baudrate: 9600)
+2025-07-03 19:06:37,540 - systems.table_system - ERROR - Table connection error: [Errno 2] could not open port /dev/ttyUSB0: [Errno 2] No such file or directory: '/dev/ttyUSB0'

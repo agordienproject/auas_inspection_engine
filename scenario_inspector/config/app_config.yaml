@@ -1,21 +1,33 @@
 database:
-  host: "localhost"
-  port: 5432
-  username: "inspection_user"
-  password: "your_password"
-  database: "inspection_db"
+  host: "172.19.16.1"
+  port: 5433
+  username: "postgres"
+  password: "admin"
+  database: "lab_inspection"
 
 systems:
   scanControl:
-    ip: "192.168.1.100"
-    port: 8080
+    connection_type: "tcp"
+    ip: "192.168.3.2"
     timeout: 30
     type: "laser_scanner"
   camera:
-    ip: "192.168.1.101"
-    port: 8081
+    connection_type: "usb"
+    device_id: "Intel Corp"
     timeout: 15
     type: "camera_system"
+  table:
+    connection_type: "serial"
+    port: "/dev/ttyUSB0"
+    baudrate: 9600
+    timeout: 10
+    type: "rotating_table"
+  gantry:
+    connection_type: "tcp"
+    ip: "192.168.3.11"
+    port: 3920
+    timeout: 20
+    type: "gantry_system"
 
 ftp:
   server: "ftp://inspection-server"

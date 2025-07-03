@@ -3,6 +3,7 @@ Base system class for all inspection systems
 """
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
+from datetime import datetime
 import logging
 
 class BaseSystem(ABC):
@@ -32,9 +33,21 @@ class BaseSystem(ABC):
         pass
         
     @abstractmethod
+    def test_connection(self) -> Dict[str, Any]:
+        """Test connection to the system
+        
+        Returns:
+            Dict containing connection status and details
+        """
+        pass
+        
     def cleanup(self) -> None:
         """Cleanup system resources"""
         pass
+        
+    def shutdown(self) -> None:
+        """Shutdown the system gracefully"""
+        self.cleanup()
         
     def validate_parameters(self, parameters: Dict[str, Any]) -> bool:
         """Validate step parameters"""
@@ -47,3 +60,7 @@ class BaseSystem(ABC):
             "initialized": self.is_initialized,
             "config": self.config
         }
+    
+    def get_timestamp(self) -> str:
+        """Get current timestamp"""
+        return datetime.now().isoformat()

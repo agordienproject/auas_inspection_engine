@@ -1,120 +1,113 @@
 """
-Database connection manager for Scenario Inspector (Simplified Version)
+Simple database connection for Scenario Inspector
 """
+import psycopg2
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional
 from datetime import datetime
 
 from database.models import User, Inspection
 from config.config_manager import ConfigManager
+from auth.password_utils import PasswordUtils
 
 class DatabaseConnection:
-    """Simplified database manager without PostgreSQL dependency"""
+    """Simple database manager for authentication and inspection data insertion"""
     
     def __init__(self):
         self.config_manager = ConfigManager()
+        self.db_config = self.config_manager.get_database_config()
         self.logger = logging.getLogger(__name__)
-        
-        # Mock users for testing
-        self.mock_users = [
-            User(
-                id_user=1,
-                first_name="Admin",
-                last_name="User", 
-                pseudo="admin",
-                email="admin@test.com",
-                password="admin123",  # In real app, this would be hashed
-                role="admin"
-            ),
-            User(
-                id_user=2,
-                first_name="Test",
-                last_name="Inspector",
-                pseudo="inspector", 
-                email="inspector@test.com",
-                password="inspector123",
-                role="inspector"
+        self.password_utils = PasswordUtils(rounds=12)
+    
+    def get_connection(self):
+        """Get database connection"""
+        try:
+            conn = psycopg2.connect(
+                host=self.db_config['host'],
+                port=self.db_config['port'],
+                database=self.db_config['database'],
+                user=self.db_config['username'],
+                password=self.db_config['password']
             )
-        ]
-        
-        # Mock inspections storage
-        self.mock_inspections = []
-        self.next_inspection_id = 1
+            return conn
+        except Exception as e:
+            self.logger.error(f"Database connection failed: {e}")
+            raise
     
     def test_connection(self) -> bool:
-        """Test database connection (always returns True in mock mode)"""
-        return True
-    
-    def authenticate_user(self, pseudo: str, password: str) -> Optional[User]:
-        """Authenticate user with pseudo and password (simplified - no hashing)"""
+        """Test database connection"""
         try:
-            for user in self.mock_users:
-                if user.pseudo == pseudo and user.password == password:
-                    self.logger.info(f"User {pseudo} authenticated successfully")
-                    return user
-            self.logger.warning(f"Authentication failed for user {pseudo}")
+            conn = self.get_connection()
+            conn.close()
+            return True
+        except Exception as e:
+            self.logger.error(f"Database connection test failed: {e}")
+            return False
+    
+    def authenticate_user(self, email: str, password: str) -> Optional[User]:
+        """Authenticate user with email and password using bcrypt verification"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Get user data including the hashed password
+            cursor.execute(
+                'SELECT id_user, first_name, last_name, pseudo, email, role, password FROM "DIM_USER" WHERE email = %s AND deleted = FALSE',
+                (email,)
+            )
+            
+            row = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            
+            if row:
+                # Verify the password using bcrypt
+                stored_password_hash = row[6]  # password is now the 7th column (index 6)
+                if self.password_utils.verify_password(password, stored_password_hash):
+                    return User(
+                        id_user=row[0],
+                        first_name=row[1], 
+                        last_name=row[2],
+                        pseudo=row[3],
+                        email=row[4],
+                        role=row[5]
+                    )
             return None
+            
         except Exception as e:
             self.logger.error(f"Authentication error: {e}")
             return None
     
-    def get_user_by_pseudo(self, pseudo: str) -> Optional[User]:
-        """Get user by pseudo"""
+    def insert_inspection(self, inspection: Inspection) -> bool:
+        """Insert new inspection into database"""
         try:
-            for user in self.mock_users:
-                if user.pseudo == pseudo:
-                    return user
-            return None
-        except Exception as e:
-            self.logger.error(f"Get user error: {e}")
-            return None
-    
-    def create_inspection(self, inspection: Inspection) -> Optional[int]:
-        """Create new inspection and return inspection ID"""
-        try:
-            inspection.id_inspection = self.next_inspection_id
-            self.next_inspection_id += 1
-            self.mock_inspections.append(inspection)
-            self.logger.info(f"Created inspection with ID: {inspection.id_inspection}")
-            return inspection.id_inspection
-        except Exception as e:
-            self.logger.error(f"Create inspection error: {e}")
-            return None
-    
-    def update_inspection(self, inspection: Inspection) -> bool:
-        """Update existing inspection"""
-        try:
-            for i, existing in enumerate(self.mock_inspections):
-                if existing.id_inspection == inspection.id_inspection:
-                    self.mock_inspections[i] = inspection
-                    self.logger.info(f"Updated inspection ID: {inspection.id_inspection}")
-                    return True
-            return False
-        except Exception as e:
-            self.logger.error(f"Update inspection error: {e}")
-            return False
-    
-    def get_inspection(self, inspection_id: int) -> Optional[Inspection]:
-        """Get inspection by ID"""
-        try:
-            for inspection in self.mock_inspections:
-                if inspection.id_inspection == inspection_id:
-                    return inspection
-            return None
-        except Exception as e:
-            self.logger.error(f"Get inspection error: {e}")
-            return None
-    
-    def get_recent_inspections(self, limit: int = 50) -> List[Inspection]:
-        """Get recent inspections"""
-        try:
-            # Sort by creation date and return most recent
-            sorted_inspections = sorted(
-                self.mock_inspections, 
-                key=lambda x: x.creation_date or datetime.now(), 
-                reverse=True
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                '''INSERT INTO "FCT_INSPECTION" 
+                   (name_piece, ref_piece, name_program, state, dents, corrosions, 
+                    scratches, details, inspection_date, inspection_path, 
+                    inspection_status, creation_date, user_creation)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
+                (inspection.name_piece, inspection.ref_piece, inspection.name_program,
+                 inspection.state, inspection.dents, inspection.corrosions,
+                 inspection.scratches, inspection.details, inspection.inspection_date,
+                 inspection.inspection_path, inspection.inspection_status,
+                 inspection.creation_date, inspection.user_creation)
             )
-            return sorted_inspections[:limit]
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            self.logger.info("Inspection data inserted successfully")
+            return True
+            
         except Exception as e:
-            self.logger.error(f"Get recent inspections error: {e}")
-            return []
+            self.logger.error(f"Failed to insert inspection: {e}")
+            return False
+    
+    def hash_password(self, password: str) -> str:
+        """Hash a password using bcrypt with salt rounds of 12"""
+        return self.password_utils.hash_password(password)

@@ -1,6 +1,7 @@
 """
 Scenario execution engine for running inspection programs
 """
+import os
 import yaml
 import logging
 from datetime import datetime
@@ -162,24 +163,6 @@ class ScenarioEngine:
                 program_name, piece_name, ref_piece
             )
             
-            # Create inspection record in database
-            inspection = Inspection(
-                name_piece=piece_name,
-                ref_piece=ref_piece,
-                name_program=program_name,
-                state='IN_PROGRESS',
-                inspection_date=datetime.now().date(),
-                inspection_path=self.current_inspection_folder,
-                inspection_status='RUNNING',
-                creation_date=datetime.now(),
-                user_creation=self.user.id_user
-            )
-            
-            self.current_inspection_id = self.db_connection.create_inspection(inspection)
-            if not self.current_inspection_id:
-                self.logger.error("Failed to create inspection record")
-                return False
-            
             # Execute all stages
             execution_results = []
             overall_success = True
@@ -189,16 +172,6 @@ class ScenarioEngine:
                 execution_results.append(stage_result)
                 if not stage_result['success']:
                     overall_success = False
-            
-            # Update inspection status
-            final_status = 'COMPLETED' if overall_success else 'FAILED'
-            inspection.id_inspection = self.current_inspection_id
-            inspection.inspection_status = final_status
-            inspection.state = 'GOOD' if overall_success else 'NOT_GOOD'
-            inspection.modification_date = datetime.now()
-            inspection.user_modification = self.user.id_user
-            
-            self.db_connection.update_inspection(inspection)
             
             # Create inspection report
             report_data = {
@@ -214,22 +187,30 @@ class ScenarioEngine:
                 self.current_inspection_folder, report_data
             )
             
-            self.logger.info(f"Scenario execution completed. Status: {final_status}")
+            # Insert inspection data into database
+            inspection = Inspection(
+                name_piece=piece_name,
+                ref_piece=ref_piece,
+                name_program=program_name,
+                state='GOOD' if overall_success else 'NOT_GOOD',
+                inspection_date=datetime.now().date(),
+                inspection_path=self.current_inspection_folder,
+                inspection_status='COMPLETED' if overall_success else 'FAILED',
+                creation_date=datetime.now(),
+                user_creation=self.user.id_user,
+                details=f"Executed {len(execution_results)} steps. Success rate: {sum(1 for r in execution_results if r.get('success', False))}/{len(execution_results)}"
+            )
+            
+            if self.db_connection.insert_inspection(inspection):
+                self.logger.info("Inspection data saved to database")
+            else:
+                self.logger.warning("Failed to save inspection data to database")
+            
+            self.logger.info(f"Scenario execution completed. Status: {'SUCCESS' if overall_success else 'FAILED'}")
             return overall_success
             
         except Exception as e:
             self.logger.error(f"Scenario execution failed: {e}")
-            
-            # Update inspection as failed
-            if self.current_inspection_id:
-                inspection.id_inspection = self.current_inspection_id
-                inspection.inspection_status = 'FAILED'
-                inspection.state = 'ERROR'
-                inspection.details = f"Execution error: {str(e)}"
-                inspection.modification_date = datetime.now()
-                inspection.user_modification = self.user.id_user
-                self.db_connection.update_inspection(inspection)
-            
             return False
     
     def _execute_stage(self, stage: Dict[str, Any]) -> Dict[str, Any]:
