@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Program>
+    <Header />
+    <Joint AbortCondition="False" Nr="1" Source="Numerical" velPercent="40" acc="40" smooth="0" a1="50" a2="50" a3="0" a4="0" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Joint AbortCondition="False" Nr="2" Source="Numerical" velPercent="40" acc="40" smooth="0" a1="300" a2="200" a3="0" a4="0" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Joint AbortCondition="False" Nr="3" Source="Numerical" velPercent="40" acc="40" smooth="0" a1="100" a2="300" a3="0" a4="0" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+</Program>

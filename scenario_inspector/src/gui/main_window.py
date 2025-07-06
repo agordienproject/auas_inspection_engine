@@ -281,9 +281,29 @@ class InspectionMainWindow(QMainWindow):
         
         layout.addLayout(buttons_layout)
         
-        # System status group
+        # System status group with scrollable area
+        from PyQt5.QtWidgets import QScrollArea
+        
         status_group = QGroupBox("System Status")
-        self.status_layout = QGridLayout(status_group)
+        scroll_area = QScrollArea()
+        scroll_widget = QWidget()
+        self.status_layout = QGridLayout(scroll_widget)
+        
+        # Set fixed column widths to prevent stretching
+        self.status_layout.setColumnMinimumWidth(0, 120)  # System name
+        self.status_layout.setColumnMinimumWidth(1, 60)   # Status
+        self.status_layout.setColumnMinimumWidth(2, 200)  # Connection info
+        self.status_layout.setColumnMinimumWidth(3, 300)  # Details
+        
+        # Configure scroll area
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setMaximumHeight(300)  # Limit height to prevent window stretching
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
+        status_group_layout = QVBoxLayout(status_group)
+        status_group_layout.addWidget(scroll_area)
         
         # Initialize status display
         self._initialize_status_display()
@@ -327,22 +347,34 @@ class InspectionMainWindow(QMainWindow):
         row = 1
         for system_name in systems_config.keys():
             # System name
-            self.status_layout.addWidget(QLabel(f"{system_name}:"), row, 0)
+            system_label = QLabel(f"{system_name}:")
+            system_label.setMinimumWidth(100)
+            system_label.setMaximumWidth(120)
+            self.status_layout.addWidget(system_label, row, 0)
             
             # Status indicator
             status_label = QLabel("⏳")
             status_label.setStyleSheet("color: orange; font-size: 16px;")
             status_label.setToolTip("Status unknown")
+            status_label.setMinimumWidth(50)
+            status_label.setMaximumWidth(60)
             self.status_layout.addWidget(status_label, row, 1)
             self.status_labels[system_name] = status_label
             
             # Connection info
             info_label = QLabel("Not tested")
+            info_label.setWordWrap(True)
+            info_label.setMinimumWidth(150)
+            info_label.setMaximumWidth(200)
             self.status_layout.addWidget(info_label, row, 2)
             self.status_info_labels[system_name] = info_label
             
             # Details
             detail_label = QLabel("-")
+            detail_label.setWordWrap(True)
+            detail_label.setMinimumWidth(200)
+            detail_label.setMaximumWidth(300)
+            detail_label.setAlignment(Qt.AlignTop)
             self.status_layout.addWidget(detail_label, row, 3)
             self.status_detail_labels[system_name] = detail_label
             
@@ -430,7 +462,7 @@ class InspectionMainWindow(QMainWindow):
             status_label.setStyleSheet("color: gray; font-size: 16px;")
             status_label.setToolTip("Unknown Status")
         
-        # Update info
+        # Update info with truncation
         system_config = self.config_manager.get_system_config(system_name)
         connection_type = system_config.get('connection_type', 'unknown')
         
@@ -448,9 +480,12 @@ class InspectionMainWindow(QMainWindow):
         else:
             info_text = f"{connection_type}: {message}"
         
-        info_label.setText(info_text)
+        # Truncate info text if too long
+        info_text_display = self._truncate_text(info_text, 25)
+        info_label.setText(info_text_display)
+        info_label.setToolTip(info_text)  # Full text in tooltip
         
-        # Update details
+        # Update details with truncation
         detail_text = message
         if details:
             detail_parts = []
@@ -459,8 +494,16 @@ class InspectionMainWindow(QMainWindow):
             if detail_parts:
                 detail_text += f" ({', '.join(detail_parts)})"
         
-        detail_label.setText(detail_text)
+        # Truncate detail text if too long
+        detail_text_display = self._truncate_text(detail_text, 40)
+        detail_label.setText(detail_text_display)
         detail_label.setToolTip(detail_text)  # Full text in tooltip
+    
+    def _truncate_text(self, text: str, max_length: int) -> str:
+        """Truncate text to max_length with ellipsis if needed"""
+        if len(text) <= max_length:
+            return text
+        return text[:max_length-3] + "..."
     
     def log_status_message(self, message: str):
         """Log a message to the status log"""

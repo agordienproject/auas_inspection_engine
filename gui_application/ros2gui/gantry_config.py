@@ -1,6 +1,13 @@
 import os
+import sys
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QLineEdit, QPushButton, QComboBox, QCheckBox
 from . import utils
+
+# Add the parent directory to sys.path to access cri_lib
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(os.path.dirname(current_dir))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
 class GantryConfigWindow(QWidget):
     PROGRAMS_FOLDER = "/home/agordien/Documents/gantry_programs"
@@ -132,6 +139,9 @@ class GantryConfigWindow(QWidget):
                 self.controller.close()
             except Exception:
                 pass
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
         import cri_lib
         self.controller = cri_lib.CRIController()
         self.connected = self.controller.connect(ip, port)
@@ -174,6 +184,7 @@ class GantryConfigWindow(QWidget):
             return
         program_name = self.program_files[idx]
         local_path = os.path.join(self.PROGRAMS_FOLDER, program_name)
+        print("local_path:", local_path)
         # Upload the file first
         self.controller.upload_file(local_path, "Programs")
         

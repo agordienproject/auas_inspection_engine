@@ -9,7 +9,7 @@ import os
 from systems.base_system import BaseSystem
 
 # Add CRI lib path
-sys.path.insert(0, '/home/agordien/projects/auas_inspection_engine/gui_application')
+sys.path.insert(0, '/home/agordien/projects/auas_inspection_engine')
 
 try:
     import cri_lib
@@ -32,8 +32,8 @@ class GantryController:
         """Connect to gantry system"""
         if not CRI_AVAILABLE:
             # Simulate connection for testing
-            self.connected = True
-            return True
+            self.connected = False
+            return False
             
         try:
             if self.controller:
@@ -97,44 +97,131 @@ class GantryController:
         except Exception:
             return False
     
-    def load_program(self, program_name: str, local_path: str = None):
+    def load_program(self, program_name: str, local_path: str):
         """Load a program to the gantry"""
+        logger = logging.getLogger(__name__)
+        logger.info(f"Attempting to load program '{program_name}' with local path: {local_path}")
+        
         if not self.connected:
+            logger.error("Cannot load program: Gantry not connected")
             return False
             
         if not CRI_AVAILABLE:
+            logger.info("CRI library not available - simulating program load success")
             self.program_loaded = True
             return True
             
         try:
+            logger.debug("Setting active control to True")
             self.controller.set_active_control(True)
+            
+            logger.debug("Waiting for kinematics to be ready (timeout: 10s)")
             self.controller.wait_for_kinematics_ready(10)
+            
+            logger.debug("Setting override to 50%")
             self.controller.set_override(50.0)
             
             if local_path:
+                logger.info(f"Loading program from local path: {local_path}")
+                # Merge the local_path and the program_name (keep Linux paths)
+                full_local_path = os.path.join(local_path, program_name)
+                logger.debug(f"Full local path resolved to: {full_local_path}")
+
+                # Check if file exists before upload
+                if not os.path.exists(full_local_path):
+                    logger.error(f"Program file not found at path: {full_local_path}")
+                    return False
+
                 # Upload the file first
-                self.controller.upload_file(local_path, "Programs")
+                logger.info(f"Uploading program file '{full_local_path}' to 'Programs' directory")
+                upload_result = self.controller.upload_file(full_local_path, "Programs")
+                logger.debug(f"Upload result: {upload_result}")
+            else:
+                logger.info(f"Loading program '{program_name}' directly (no local path specified)")
             
-            # Load the program
-            if self.controller.load_programm(program_name):
+            # Load the program (use program_name only, not the local path)
+            logger.info(f"Loading program '{program_name}' into controller")
+            load_result = self.controller.load_programm(program_name)
+            logger.debug(f"Program load result: {load_result}")
+            
+            if load_result:
                 self.program_loaded = True
+                logger.info(f"Successfully loaded program '{program_name}'")
                 return True
-            return False
+            else:
+                logger.warning(f"Failed to load program '{program_name}' - controller returned False")
+                return False
             
-        except Exception:
+        except FileNotFoundError as e:
+            logger.error(f"File not found while loading program '{program_name}': {e}")
+            return False
+        except PermissionError as e:
+            logger.error(f"Permission error while loading program '{program_name}': {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error while loading program '{program_name}': {e}")
             return False
     
-    def start_program(self):
-        """Start the loaded program"""
+    def start_program(self, wait_for_completion: bool = True, timeout: float = 300.0):
+        """Start the loaded program
+        
+        Parameters
+        ----------
+        wait_for_completion : bool
+            If True, wait until the program finishes execution
+        timeout : float
+            Maximum time to wait for program completion in seconds
+        """
+        logger = logging.getLogger(__name__)
+
         if not self.connected or not self.program_loaded:
+            logger.error("Cannot start program: not connected or no program loaded")
             return False
             
         if not CRI_AVAILABLE:
+            logger.info("CRI library not available - simulating program start")
             return True
             
         try:
-            return self.controller.start_programm()
-        except Exception:
+            logger.info(f"Starting program on gantry (wait_for_completion={wait_for_completion})")
+            
+            # Register for EXECEND if we want to wait for completion
+            if wait_for_completion:
+                logger.debug("Registering for EXECEND message to wait for program completion")
+                self.controller._register_answer("EXECEND")
+            
+            # Start the program
+            command = "CMD StartProgram"
+            msg_id = self.controller._send_command(command, True)
+            
+            if msg_id is None:
+                logger.error("Failed to send start program command")
+                return False
+            
+            # Wait for command acknowledgment
+            error_msg = self.controller._wait_for_answer(f"{msg_id}", timeout=10.0)
+            if error_msg is not None:
+                logger.error(f"Error starting program: {error_msg}")
+                return False
+            
+            logger.info("Program start command acknowledged")
+            
+            # If we should wait for completion, wait for EXECEND
+            if wait_for_completion:
+                logger.info(f"Waiting for program completion (timeout: {timeout}s)")
+                
+                # Wait for EXECEND message
+                error_msg = self.controller._wait_for_answer("EXECEND", timeout=timeout)
+                if error_msg is not None:
+                    logger.warning(f"Program execution error or timeout: {error_msg}")
+                    return False
+                
+                logger.info("Program completed successfully")
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Exception while starting program: {e}")
             return False
     
     def stop_program(self):
@@ -219,13 +306,16 @@ class GantrySystem(BaseSystem):
     def test_connection(self) -> Dict[str, Any]:
         """Test gantry connection"""
         try:
+            programs_path = self.config.get('programs_path', 'Not configured')
+            
             if self.gantry_controller.test_connection():
                 return {
                     'status': 'available',
                     'message': 'Gantry connected and ready',
                     'details': {
                         'motor_enabled': self.gantry_controller.motor_enabled,
-                        'program_loaded': self.gantry_controller.program_loaded
+                        'program_loaded': self.gantry_controller.program_loaded,
+                        'programs_path': programs_path
                     }
                 }
             else:
@@ -236,13 +326,17 @@ class GantrySystem(BaseSystem):
                         'message': 'Gantry connection established',
                         'details': {
                             'motor_enabled': self.gantry_controller.motor_enabled,
-                            'program_loaded': self.gantry_controller.program_loaded
+                            'program_loaded': self.gantry_controller.program_loaded,
+                            'programs_path': programs_path
                         }
                     }
                 else:
                     return {
                         'status': 'not_available',
-                        'message': 'Gantry connection failed'
+                        'message': 'Gantry connection failed',
+                        'details': {
+                            'programs_path': programs_path
+                        }
                     }
         except Exception as e:
             self.logger.error(f"Gantry connection test failed: {e}")
@@ -299,22 +393,40 @@ class GantrySystem(BaseSystem):
     def _load_program(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
         """Load a program"""
         program_name = step_config.get('program_name')
-        program_path = step_config.get('program_path')
         
         if not program_name:
             raise ValueError("Program name is required")
         
-        self.logger.info(f"Loading gantry program: {program_name}")
+        # Determine the program path to use
+        # Priority: step-specific program_path > default programs_path from config
+        step_program_path = step_config.get('program_path')
+        default_programs_path = self.config.get('programs_path')
         
-        success = self.gantry_controller.load_program(program_name, program_path)
+        if step_program_path:
+            # Use the path specified in the step
+            programs_path = step_program_path
+            self.logger.info(f"Using step-specific program path: {programs_path}")
+        elif default_programs_path:
+            # Use the default path from configuration
+            programs_path = default_programs_path
+            self.logger.info(f"Using default program path from config: {programs_path}")
+        else:
+            # No path specified, load program without path
+            programs_path = None
+            self.logger.info("No program path specified, loading program without path")
+        
+        self.logger.info(f"Loading gantry program: {program_name} from path: {programs_path}")
+        
+        success = self.gantry_controller.load_program(program_name, programs_path)
         if not success:
             raise RuntimeError(f"Failed to load program: {program_name}")
         
         return {
             'status': 'success',
-            'message': f'Program {program_name} loaded successfully',
+            'message': f'Program {program_name} loaded successfully from {programs_path or "default location"}',
             'data': {
                 'program_name': program_name,
+                'program_path': programs_path,
                 'timestamp': self.get_timestamp()
             }
         }
@@ -323,14 +435,33 @@ class GantrySystem(BaseSystem):
         """Run a program"""
         self.logger.info("Running gantry program")
         
-        success = self.gantry_controller.start_program()
+        # Ensure motors are enabled before starting program
+        if not self.gantry_controller.motor_enabled:
+            if not self.gantry_controller.enable_motors():
+                raise RuntimeError("Failed to enable gantry motors before starting program")
+        
+        # Get configuration for program execution
+        wait_for_completion = step_config.get('wait_for_completion', True)
+        timeout = step_config.get('timeout', 300.0)  # Default 5 minutes
+        
+        self.logger.info(f"Starting program with wait_for_completion={wait_for_completion}, timeout={timeout}s")
+        
+        success = self.gantry_controller.start_program(
+            wait_for_completion=wait_for_completion,
+            timeout=timeout
+        )
+        
         if not success:
-            raise RuntimeError("Failed to start program")
+            raise RuntimeError("Failed to start program or program execution failed")
+        
+        completion_message = "Program completed successfully" if wait_for_completion else "Program started successfully"
         
         return {
             'status': 'success',
-            'message': 'Program started successfully',
+            'message': completion_message,
             'data': {
+                'wait_for_completion': wait_for_completion,
+                'timeout': timeout,
                 'timestamp': self.get_timestamp()
             }
         }

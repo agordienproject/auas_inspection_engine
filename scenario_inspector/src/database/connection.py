@@ -5,10 +5,17 @@ import psycopg2
 import logging
 from typing import Optional
 from datetime import datetime
+import signal
 
 from database.models import User, Inspection
 from config.config_manager import ConfigManager
 from auth.password_utils import PasswordUtils
+
+
+class ConnectionTimeoutError(Exception):
+    """Raised when database connection times out"""
+    pass
+
 
 class DatabaseConnection:
     """Simple database manager for authentication and inspection data insertion"""
@@ -18,31 +25,121 @@ class DatabaseConnection:
         self.db_config = self.config_manager.get_database_config()
         self.logger = logging.getLogger(__name__)
         self.password_utils = PasswordUtils(rounds=12)
+        self.connection_timeout = 10  # 10 seconds timeout
+    
+    def _timeout_handler(self, signum, frame):
+        """Handler for connection timeout"""
+        raise ConnectionTimeoutError("Database connection timed out")
     
     def get_connection(self):
-        """Get database connection"""
+        """Get database connection with timeout and better error handling"""
         try:
+            self.logger.info("Attempting to connect to database...")
+            
+            # Set up timeout signal (only works on Unix systems)
+            if hasattr(signal, 'SIGALRM'):
+                signal.signal(signal.SIGALRM, self._timeout_handler)
+                signal.alarm(self.connection_timeout)
+            
             conn = psycopg2.connect(
                 host=self.db_config['host'],
                 port=self.db_config['port'],
                 database=self.db_config['database'],
                 user=self.db_config['username'],
-                password=self.db_config['password']
+                password=self.db_config['password'],
+                connect_timeout=self.connection_timeout
             )
+            
+            # Cancel the alarm if connection succeeded
+            if hasattr(signal, 'SIGALRM'):
+                signal.alarm(0)
+            
+            self.logger.info("Database connection established successfully")
             return conn
+            
+        except ConnectionTimeoutError:
+            error_msg = f"Database connection timed out after {self.connection_timeout} seconds"
+            self.logger.error(error_msg)
+            raise ConnectionTimeoutError(error_msg)
+            
+        except psycopg2.OperationalError as e:
+            error_str = str(e)
+            if "authentication failed" in error_str.lower() or "password authentication failed" in error_str.lower():
+                error_msg = "Database authentication failed - check username and password in configuration"
+                self.logger.error(error_msg)
+                raise psycopg2.OperationalError(error_msg)
+            elif "could not connect to server" in error_str.lower() or "connection refused" in error_str.lower():
+                error_msg = f"Connection to database server failed - server may be down or unreachable at {self.db_config['host']}:{self.db_config['port']}"
+                self.logger.error(error_msg)
+                raise psycopg2.OperationalError(error_msg)
+            elif "database" in error_str.lower() and "does not exist" in error_str.lower():
+                error_msg = f"Database '{self.db_config['database']}' does not exist on the server"
+                self.logger.error(error_msg)
+                raise psycopg2.OperationalError(error_msg)
+            else:
+                error_msg = f"Database connection failed: {error_str}"
+                self.logger.error(error_msg)
+                raise psycopg2.OperationalError(error_msg)
+                
         except Exception as e:
-            self.logger.error(f"Database connection failed: {e}")
-            raise
+            # Cancel the alarm if an exception occurred
+            if hasattr(signal, 'SIGALRM'):
+                signal.alarm(0)
+            error_msg = f"Unexpected database connection error: {str(e)}"
+            self.logger.error(error_msg)
+            raise Exception(error_msg)
     
-    def test_connection(self) -> bool:
-        """Test database connection"""
+    def test_connection(self) -> dict:
+        """Test database connection with detailed status information"""
         try:
+            self.logger.info("Testing database connection...")
             conn = self.get_connection()
+            
+            # Test with a simple query
+            cursor = conn.cursor()
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+            cursor.close()
             conn.close()
-            return True
+            
+            self.logger.info("Database connection test successful")
+            return {
+                'status': 'success',
+                'message': 'Database connection successful',
+                'details': {
+                    'host': self.db_config['host'],
+                    'port': self.db_config['port'],
+                    'database': self.db_config['database'],
+                    'username': self.db_config['username']
+                }
+            }
+            
+        except ConnectionTimeoutError as e:
+            error_msg = f"Connection to database server timed out after {self.connection_timeout} seconds"
+            self.logger.error(error_msg)
+            return {
+                'status': 'timeout',
+                'message': error_msg,
+                'error': str(e)
+            }
+            
+        except psycopg2.OperationalError as e:
+            error_str = str(e)
+            self.logger.error(f"Database connection test failed: {error_str}")
+            return {
+                'status': 'connection_failed',
+                'message': error_str,
+                'error': str(e)
+            }
+            
         except Exception as e:
-            self.logger.error(f"Database connection test failed: {e}")
-            return False
+            error_msg = f"Database connection test failed with unexpected error: {str(e)}"
+            self.logger.error(error_msg)
+            return {
+                'status': 'error',
+                'message': error_msg,
+                'error': str(e)
+            }
     
     def authenticate_user(self, email: str, password: str) -> Optional[User]:
         """Authenticate user with email and password using bcrypt verification"""

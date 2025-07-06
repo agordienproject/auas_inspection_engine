@@ -14,23 +14,47 @@ from config.config_manager import ConfigManager
 from auth.login import LoginDialog
 
 def setup_logging():
-    """Setup logging configuration"""
-    config = ConfigManager()
-    log_level = getattr(logging, config.get_config()['logging']['level'])
-    log_file = config.get_config()['logging']['file']
+    """Setup logging configuration with daily folders and timestamped files"""
+    from datetime import datetime
     
-    # Create logs directory if it doesn't exist
-    import os
-    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    config = ConfigManager()
+    log_config = config.get_config()['logging']
+    
+    # Get configuration values
+    log_level = getattr(logging, log_config['level'])
+    log_folder_path = log_config['log_folder_path']
+    log_file_prefix = log_config['log_file_prefix']
+    console_logging = log_config.get('console', True)
+    
+    # Create timestamp strings
+    now = datetime.now()
+    date_folder = now.strftime("%Y-%m-%d")
+    timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
+    
+    # Construct the full log directory path
+    daily_log_dir = os.path.join(log_folder_path, date_folder)
+    
+    # Create the daily log directory if it doesn't exist
+    os.makedirs(daily_log_dir, exist_ok=True)
+    
+    # Construct the log file name
+    log_filename = f"{log_file_prefix}_{timestamp}.log"
+    log_file_path = os.path.join(daily_log_dir, log_filename)
+    
+    # Setup logging handlers
+    handlers = [logging.FileHandler(log_file_path)]
+    if console_logging:
+        handlers.append(logging.StreamHandler())
     
     logging.basicConfig(
         level=log_level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler() if config.get_config()['logging']['console'] else logging.NullHandler()
-        ]
+        handlers=handlers
     )
+    
+    # Log the file path for reference
+    logger = logging.getLogger(__name__)
+    logger.info(f"Log file created: {log_file_path}")
 
 def main():
     """Main entry point for the Scenario Inspector application"""

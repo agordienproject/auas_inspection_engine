@@ -2,12 +2,13 @@
 Login dialog and authentication for Scenario Inspector
 """
 import logging
+import psycopg2
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QMessageBox, QFrame)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QPalette
 
-from database.connection import DatabaseConnection
+from database.connection import DatabaseConnection, ConnectionTimeoutError
 from database.models import User
 from auth.password_utils import PasswordUtils
 
@@ -111,13 +112,16 @@ class LoginDialog(QDialog):
         self.login_button.setText("Authenticating...")
         
         try:
-            # Test database connection first
-            if not self.db_connection.test_connection():
-                QMessageBox.critical(self, "Database Error", 
-                                   "Cannot connect to database. Please check your configuration.")
+            # Test database connection first with improved error handling
+            connection_result = self.db_connection.test_connection()
+            if connection_result['status'] != 'success':
+                error_msg = connection_result.get('message', 'Unknown database error')
+                self.logger.error(f"Database connection failed: {error_msg}")
+                QMessageBox.critical(self, "Database Connection Failed", 
+                                   f"Cannot connect to database:\n{error_msg}\n\nPlease check your configuration.")
                 return
             
-            # Authenticate user (simplified version without password hashing)
+            # Authenticate user
             user = self.db_connection.authenticate_user(username, password)
             if not user:
                 QMessageBox.warning(self, "Login Failed", "Invalid username or password.")
@@ -128,6 +132,18 @@ class LoginDialog(QDialog):
             self.user_authenticated.emit(user)
             self.accept()
             
+        except ConnectionTimeoutError as e:
+            self.logger.error(f"Database connection timeout: {e}")
+            QMessageBox.critical(self, "Connection Timeout", 
+                               "Connection to database server timed out.\nPlease check your network connection and try again.")
+        except psycopg2.OperationalError as e:
+            self.logger.error(f"Database operational error: {e}")
+            if "authentication failed" in str(e).lower():
+                QMessageBox.critical(self, "Authentication Failed", 
+                                   "Database authentication failed.\nPlease check your database credentials in the configuration.")
+            else:
+                QMessageBox.critical(self, "Database Error", 
+                                   f"Database connection failed:\n{str(e)}")
         except Exception as e:
             self.logger.error(f"Login error: {e}")
             QMessageBox.critical(self, "Login Error", 
