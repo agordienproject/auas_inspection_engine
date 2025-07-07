@@ -21,18 +21,33 @@ class FileManager:
                                ref_piece: str) -> str:
         """Create organized folder structure for inspection data
         
-        Creates: output/YYYY-MM-DD/program_name_piece_name_ref_piece_HH-MM-SS/
+        Creates daily inspection folders with the following structure:
+        - output/YYYY-MM-DD/                          (Daily folder for all inspections)
+        - output/YYYY-MM-DD/inspection_{PROGRAM}_YYYYMMDD_HHMMSS/  (Individual inspection)
+        
+        Examples:
+        - output/2025-01-15/inspection_camera_photo_20250115_143025/
+        - output/2025-01-15/inspection_wing_scan_20250115_151030/
+        
+        Args:
+            program_name: Name of the YAML scenario program
+            piece_name: Name of the piece being inspected (logged for reference)
+            ref_piece: Reference number of the piece (logged for reference)
+            
+        Returns:
+            str: Path to the created inspection folder
         """
         now = datetime.now()
-        date_str = now.strftime("%Y-%m-%d")
-        time_str = now.strftime("%H-%M-%S")
+        date_str = now.strftime("%Y-%m-%d")  # Daily folder format: 2025-01-15
+        time_str = now.strftime("%Y%m%d_%H%M%S")  # New timestamp format: 20250115_143025
         
-        # Create date folder
+        # Create date folder for today's inspections
         date_folder = os.path.join(self.base_output_dir, date_str)
         os.makedirs(date_folder, exist_ok=True)
         
-        # Create inspection-specific folder
-        folder_name = f"{program_name}_{piece_name}_{ref_piece}_{time_str}"
+        # Create inspection-specific folder with new naming convention
+        # Format: inspection_{PROGRAM}_YYYYMMDD_HHMMSS
+        folder_name = f"inspection_{program_name}_{time_str}"
         # Clean folder name (remove invalid characters)
         folder_name = self._clean_filename(folder_name)
         
@@ -40,6 +55,9 @@ class FileManager:
         os.makedirs(inspection_folder, exist_ok=True)
         
         self.logger.info(f"Created inspection folder: {inspection_folder}")
+        self.logger.info(f"Daily folder structure: {date_folder}")
+        self.logger.info(f"Program: {program_name}, Piece: {piece_name}, Reference: {ref_piece}")
+        
         return inspection_folder
     
     def organize_step_data(self, inspection_folder: str, step_name: str, 

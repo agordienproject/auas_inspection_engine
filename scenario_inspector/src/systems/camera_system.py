@@ -7,126 +7,268 @@ import time
 import cv2
 import os
 import datetime
+import threading
+import signal
 from typing import Dict, Any, Optional
+
+try:
+    import rclpy
+    from rclpy.node import Node
+    from sensor_msgs.msg import Image
+    from cv_bridge import CvBridge
+    ROS2_AVAILABLE = True
+except ImportError:
+    ROS2_AVAILABLE = False
+    print("[WARN] ROS2 not available, camera system will use fallback mode")
 
 from systems.base_system import BaseSystem
 
 
+class ROS2CameraNode(Node):
+    """ROS2 Node for camera operations"""
+    
+    def __init__(self):
+        super().__init__('camera_system_node')
+        self.bridge = CvBridge()
+        self.current_image = None
+        self.image_subscription = None
+        self.logger = self.get_logger()
+        
+    def start_image_subscription(self):
+        """Start subscribing to camera images"""
+        try:
+            self.image_subscription = self.create_subscription(
+                Image,
+                '/camera/camera/color/image_raw',
+                self.image_callback,
+                10
+            )
+            self.logger.info("Started camera image subscription")
+        except Exception as e:
+            self.logger.error(f"Failed to start image subscription: {e}")
+            raise
+    
+    def stop_image_subscription(self):
+        """Stop subscribing to camera images"""
+        if self.image_subscription:
+            self.destroy_subscription(self.image_subscription)
+            self.image_subscription = None
+            self.logger.info("Stopped camera image subscription")
+    
+    def image_callback(self, msg):
+        """Callback for receiving camera images"""
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            self.current_image = cv_image
+        except Exception as e:
+            self.logger.error(f"Failed to convert image: {e}")
+
+
 class CameraController:
-    """Controller class for camera operations (from GUI application)"""
+    """Controller class for camera operations using ROS2"""
     
     def __init__(self):
         self.connected = False
         self.camera_process = None
         self.capturing = False
         self.device_id = None
+        self.ros2_node = None
+        self.ros2_thread = None
+        self.ros2_initialized = False
         
     def connect(self, device_id: str = "Intel Corp"):
         """Connect to camera system"""
         try:
             self.device_id = device_id
             
-            # Test if camera is available by trying to open it
-            # First, try to find Intel RealSense camera
-            cap = cv2.VideoCapture(0)  # Try default camera first
+            if not ROS2_AVAILABLE:
+                # Fallback to OpenCV
+                return self._connect_opencv()
             
-            if cap.isOpened():
-                # Test if we can read a frame
-                ret, frame = cap.read()
-                cap.release()
-                
-                if ret:
-                    self.connected = True
-                    return True
+            # Initialize ROS2 if not already done
+            if not self.ros2_initialized:
+                if not rclpy.ok():
+                    rclpy.init()
+                self.ros2_initialized = True
             
-            return False
+            # Test camera availability using lsusb (like in utils.py)
+            result = subprocess.run(['lsusb'], capture_output=True, text=True)
+            if "Intel Corp." in result.stdout or "RealSense" in result.stdout:
+                self.connected = True
+                return True
+            else:
+                print(f"[WARN] Camera device '{device_id}' not found in USB devices")
+                return False
                 
         except Exception as e:
             self.connected = False
             raise e
     
+    def _connect_opencv(self):
+        """Fallback connection using OpenCV"""
+        cap = cv2.VideoCapture(0)
+        if cap.isOpened():
+            ret, frame = cap.read()
+            cap.release()
+            if ret:
+                self.connected = True
+                return True
+        return False
+    
     def disconnect(self):
         """Disconnect from camera"""
         try:
-            if self.camera_process:
-                self.camera_process.terminate()
-                self.camera_process = None
+            self.stop_camera()
+            if self.ros2_node:
+                self.ros2_node.destroy_node()
+                self.ros2_node = None
+            
             self.connected = False
-            self.capturing = False
             return True
         except Exception:
             self.connected = False
             return False
     
     def start_camera(self):
-        """Start camera capture"""
+        """Start camera capture using ROS2"""
         if not self.connected:
             raise ConnectionError("Camera not connected")
         
         try:
+            if not ROS2_AVAILABLE:
+                return self._start_camera_opencv()
+            
             # Launch RealSense camera via ROS2 (similar to GUI implementation)
             cmd = [
-                "gnome-terminal", "--", "bash", "-c",
+                "bash", "-c",
                 "source /opt/ros/humble/setup.bash && ros2 launch realsense2_camera rs_launch.py"
             ]
             
-            self.camera_process = subprocess.Popen(cmd)
-            self.capturing = True
+            self.camera_process = subprocess.Popen(cmd, preexec_fn=os.setsid)
             
-            # Give some time for the camera to start
+            # Give time for camera to start
             time.sleep(3)
             
+            # Create ROS2 node for image subscription
+            if not self.ros2_node:
+                self.ros2_node = ROS2CameraNode()
+                
+                # Start spinning the node in a separate thread
+                self.ros2_thread = threading.Thread(target=self._spin_ros2_node)
+                self.ros2_thread.daemon = True
+                self.ros2_thread.start()
+            
+            # Start image subscription
+            self.ros2_node.start_image_subscription()
+            
+            # Wait a bit more for subscription to be ready
+            time.sleep(2)
+            
+            self.capturing = True
             return True
             
         except Exception as e:
             self.capturing = False
             raise RuntimeError(f"Failed to start camera: {e}")
     
+    def _start_camera_opencv(self):
+        """Fallback start using OpenCV"""
+        self.capturing = True
+        return True
+    
+    def _spin_ros2_node(self):
+        """Spin the ROS2 node in a separate thread"""
+        try:
+            rclpy.spin(self.ros2_node)
+        except Exception as e:
+            print(f"[ERROR] ROS2 spinning error: {e}")
+    
     def stop_camera(self):
         """Stop camera capture"""
         try:
+            # Stop ROS2 subscription
+            if self.ros2_node:
+                self.ros2_node.stop_image_subscription()
+            
+            # Kill the ROS2 camera process
             if self.camera_process:
-                # Kill the ROS2 camera process
+                try:
+                    # Kill the process group
+                    os.killpg(os.getpgid(self.camera_process.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass  # Process already terminated
+                
+                # Also try pkill as fallback
                 subprocess.run([
                     "pkill", "-f", "ros2 launch realsense2_camera rs_launch.py"
                 ], check=False)
+                
                 self.camera_process = None
             
             self.capturing = False
             return True
             
-        except Exception:
+        except Exception as e:
+            print(f"[WARN] Error stopping camera: {e}")
             self.capturing = False
             return False
     
     def capture_image(self, output_path: str = None):
-        """Capture a single image"""
+        """Capture a single image from ROS2 camera feed"""
         if not self.capturing:
             raise RuntimeError("Camera not capturing")
         
         try:
-            # For now, capture using OpenCV as fallback
-            cap = cv2.VideoCapture(0)
+            if not ROS2_AVAILABLE or not self.ros2_node:
+                # Fallback to OpenCV capture
+                return self._capture_image_opencv(output_path)
             
-            if not cap.isOpened():
-                raise RuntimeError("Cannot open camera for capture")
+            # Wait for image from ROS2 subscription
+            max_wait_time = 5.0  # seconds
+            wait_interval = 0.1
+            waited = 0.0
             
-            ret, frame = cap.read()
-            cap.release()
+            while self.ros2_node.current_image is None and waited < max_wait_time:
+                time.sleep(wait_interval)
+                waited += wait_interval
             
-            if not ret:
-                raise RuntimeError("Failed to capture frame")
+            if self.ros2_node.current_image is None:
+                raise RuntimeError("No image received from camera within timeout")
+            
+            # Get the current image
+            frame = self.ros2_node.current_image.copy()
             
             if output_path is None:
                 # Generate default output path
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 output_path = f"capture_{timestamp}.png"
             
+            # Save the image
             cv2.imwrite(output_path, frame)
             return output_path
             
         except Exception as e:
             raise RuntimeError(f"Failed to capture image: {e}")
+    
+    def _capture_image_opencv(self, output_path: str = None):
+        """Fallback image capture using OpenCV"""
+        cap = cv2.VideoCapture(0)
+        
+        if not cap.isOpened():
+            raise RuntimeError("Cannot open camera for capture")
+        
+        ret, frame = cap.read()
+        cap.release()
+        
+        if not ret:
+            raise RuntimeError("Failed to capture frame")
+        
+        if output_path is None:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = f"capture_{timestamp}.png"
+        
+        cv2.imwrite(output_path, frame)
+        return output_path
     
     def test_connection(self):
         """Test if connection is working"""
@@ -134,12 +276,22 @@ class CameraController:
             return False
         
         try:
-            # Test by trying to open camera
-            cap = cv2.VideoCapture(0)
-            is_open = cap.isOpened()
-            cap.release()
-            return is_open
-        except Exception:
+            if not ROS2_AVAILABLE:
+                # Fallback test using OpenCV
+                cap = cv2.VideoCapture(0)
+                is_open = cap.isOpened()
+                cap.release()
+                return is_open
+            
+            # Test using lsusb like the GUI implementation
+            result = subprocess.run(['lsusb'], capture_output=True, text=True)
+            for line in result.stdout.splitlines():
+                if "Intel Corp." in line or "RealSense" in line:
+                    return True
+            return False
+            
+        except Exception as e:
+            print(f"[ERROR] Camera connection test failed: {e}")
             return False
 
 
@@ -284,13 +436,14 @@ class CameraSystem(BaseSystem):
         return os.path.join(output_dir, default_filename)
     
     def _take_photo(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Take a single photo"""
-        self.logger.info("Taking photo")
+        """Take a single photo using ROS2 camera feed"""
+        self.logger.info("Taking photo with ROS2 camera")
         
         # Start camera if not already capturing
         if not self.camera_controller.capturing:
+            self.logger.info("Starting camera for photo capture")
             self.camera_controller.start_camera()
-            time.sleep(2)  # Wait for camera to stabilize
+            time.sleep(3)  # Wait for camera to stabilize and ROS2 to connect
         
         # Generate output path
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -302,11 +455,13 @@ class CameraSystem(BaseSystem):
             
             result = {
                 'status': 'success',
-                'message': 'Photo captured successfully',
+                'message': 'Photo captured successfully using ROS2 camera',
                 'data': {
                     'image_path': saved_path,
                     'timestamp': self.get_timestamp(),
-                    'action': 'take_photo'
+                    'action': 'take_photo',
+                    'ros2_enabled': ROS2_AVAILABLE,
+                    'device_id': self.camera_controller.device_id
                 }
             }
             
@@ -315,9 +470,11 @@ class CameraSystem(BaseSystem):
                 result['file_saved'] = True
                 result['output_path'] = saved_path
             
+            self.logger.info(f"Photo saved to: {saved_path}")
             return result
             
         except Exception as e:
+            self.logger.error(f"Photo capture failed: {e}")
             raise RuntimeError(f"Photo capture failed: {e}")
     
     def _take_video(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
@@ -394,19 +551,10 @@ class CameraSystem(BaseSystem):
             raise RuntimeError(f"Failed to show camera in GUI: {e}")
     
     def _record_video_opencv(self, output_path: str, duration: int, resolution: str, fps: int) -> str:
-        """Record video using OpenCV"""
+        """Record video using ROS2 camera feed or OpenCV fallback"""
         try:
             # Parse resolution
             width, height = map(int, resolution.split('x'))
-            
-            # Initialize video capture
-            cap = cv2.VideoCapture(0)
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-            cap.set(cv2.CAP_PROP_FPS, fps)
-            
-            if not cap.isOpened():
-                raise RuntimeError("Cannot open camera for video recording")
             
             # Define codec and create VideoWriter
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -418,22 +566,51 @@ class CameraSystem(BaseSystem):
             
             self.logger.info(f"Recording video: {duration}s at {fps}fps ({expected_frames} frames)")
             
-            while (time.time() - start_time) < duration:
-                ret, frame = cap.read()
-                if not ret:
-                    self.logger.warning("Failed to read frame, continuing...")
-                    continue
+            if ROS2_AVAILABLE and self.camera_controller.ros2_node:
+                # Use ROS2 camera feed
+                while (time.time() - start_time) < duration:
+                    if self.camera_controller.ros2_node.current_image is not None:
+                        frame = self.camera_controller.ros2_node.current_image.copy()
+                        
+                        # Resize frame to target resolution
+                        frame_resized = cv2.resize(frame, (width, height))
+                        out.write(frame_resized)
+                        frame_count += 1
+                        
+                        # Display progress
+                        if frame_count % (fps * 2) == 0:  # Every 2 seconds
+                            elapsed = time.time() - start_time
+                            self.logger.info(f"Recording... {elapsed:.1f}s / {duration}s")
+                    
+                    # Control frame rate
+                    time.sleep(1.0 / fps)
+            else:
+                # Fallback to OpenCV
+                cap = cv2.VideoCapture(0)
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                cap.set(cv2.CAP_PROP_FPS, fps)
                 
-                out.write(frame)
-                frame_count += 1
+                if not cap.isOpened():
+                    raise RuntimeError("Cannot open camera for video recording")
                 
-                # Optional: Display progress
-                if frame_count % (fps * 2) == 0:  # Every 2 seconds
-                    elapsed = time.time() - start_time
-                    self.logger.info(f"Recording... {elapsed:.1f}s / {duration}s")
+                while (time.time() - start_time) < duration:
+                    ret, frame = cap.read()
+                    if not ret:
+                        self.logger.warning("Failed to read frame, continuing...")
+                        continue
+                    
+                    out.write(frame)
+                    frame_count += 1
+                    
+                    # Display progress
+                    if frame_count % (fps * 2) == 0:  # Every 2 seconds
+                        elapsed = time.time() - start_time
+                        self.logger.info(f"Recording... {elapsed:.1f}s / {duration}s")
+                
+                cap.release()
             
-            # Release everything
-            cap.release()
+            # Release video writer
             out.release()
             
             self.logger.info(f"Video recording completed: {frame_count} frames, saved to {output_path}")
@@ -491,6 +668,14 @@ class CameraSystem(BaseSystem):
             
             # Disconnect
             self.disconnect()
+            
+            # Shutdown ROS2 if initialized
+            if self.camera_controller.ros2_initialized and rclpy.ok():
+                try:
+                    rclpy.shutdown()
+                except Exception as e:
+                    self.logger.warning(f"Error shutting down ROS2: {e}")
+            
             self.logger.info("Camera system shut down")
         except Exception as e:
             self.logger.error(f"Error shutting down camera system: {e}")

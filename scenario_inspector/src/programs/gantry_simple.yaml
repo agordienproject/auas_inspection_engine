@@ -14,7 +14,7 @@ program:
           name: "gantry-load"
           system: "gantry"
           action: "load_program"
-          program_name: "testGantryFG.xml"
+          program_name: "Presenteren.xml"
           
         - step: 2
           name: "gantry_start"

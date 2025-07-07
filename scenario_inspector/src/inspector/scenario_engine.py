@@ -11,9 +11,7 @@ from dataclasses import asdict
 from config.config_manager import ConfigManager
 from database.connection import DatabaseConnection
 from database.models import Inspection, User
-from systems.base_system import BaseSystem
-from systems.scan_control import ScanControlSystem
-from systems.camera_system import CameraSystem
+from systems.system_manager import SystemManager
 from utils.file_manager import FileManager
 
 class ScenarioEngine:
@@ -25,34 +23,13 @@ class ScenarioEngine:
         self.config_manager = ConfigManager()
         self.db_connection = DatabaseConnection()
         
-        # Initialize file manager
-        output_config = self.config_manager.get_output_config()
-        self.file_manager = FileManager(output_config['base_directory'])
-        
-        # Initialize systems
-        self.systems = {}
-        self._initialize_systems()
+        # Initialize system manager instead of managing systems directly
+        self.system_manager = SystemManager(self.config_manager)
         
         # Current scenario state
         self.current_scenario = None
         self.current_inspection_id = None
         self.current_inspection_folder = None
-    
-    def _initialize_systems(self):
-        """Initialize all available systems"""
-        systems_config = self.config_manager.get_systems_config()
-        
-        for system_name, system_config in systems_config.items():
-            try:
-                if system_name == "scanControl":
-                    self.systems[system_name] = ScanControlSystem(system_name, system_config)
-                elif system_name == "camera":
-                    self.systems[system_name] = CameraSystem(system_name, system_config)
-                else:
-                    self.logger.warning(f"Unknown system type: {system_name}")
-                    
-            except Exception as e:
-                self.logger.error(f"Failed to initialize system {system_name}: {e}")
     
     def load_scenario_from_file(self, scenario_file_path: str) -> bool:
         """Load scenario from YAML file"""
@@ -158,10 +135,15 @@ class ScenarioEngine:
         self.logger.info(f"Starting execution of scenario: {program_name}")
         
         try:
-            # Create inspection folder
-            self.current_inspection_folder = self.file_manager.create_inspection_folder(
-                program_name, piece_name, ref_piece
-            )
+            # Create inspection folder using SystemManager
+            program_data = {
+                'name': program_name,
+                'piece_info': {
+                    'name_piece': piece_name,
+                    'ref_piece': ref_piece
+                }
+            }
+            self.current_inspection_folder = self.system_manager.create_inspection_folder(program_data)
             
             # Execute all stages
             execution_results = []
@@ -183,7 +165,7 @@ class ScenarioEngine:
                 'steps': execution_results
             }
             
-            self.file_manager.create_inspection_report(
+            self.system_manager.file_manager.create_inspection_report(
                 self.current_inspection_folder, report_data
             )
             
@@ -272,21 +254,13 @@ class ScenarioEngine:
         }
         
         try:
-            # Get system
-            system = self.systems[system_name]
-            
-            # Initialize system if not already done
-            if not system.is_initialized:
-                if not system.initialize():
-                    raise RuntimeError(f"Failed to initialize system {system_name}")
-            
-            # Execute step
-            execution_result = system.execute_step(step)
+            # Execute step using SystemManager
+            execution_result = self.system_manager.execute_step(step)
             step_result.update(execution_result)
             
             # Organize step data in output folder
             if step_result.get('success') and self.current_inspection_folder:
-                organized_path = self.file_manager.organize_step_data(
+                organized_path = self.system_manager.file_manager.organize_step_data(
                     self.current_inspection_folder, step_name, step_result
                 )
                 step_result['organized_path'] = organized_path
@@ -329,3 +303,5 @@ class ScenarioEngine:
         except Exception as e:
             self.logger.error(f"Error getting available programs: {e}")
             return []
+    
+

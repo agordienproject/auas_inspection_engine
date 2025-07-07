@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Program>
+    <Header  />
+    <Joint AbortCondition="False" Nr="1" Source="Numerical" velPercent="50" acc="40" smooth="20" a1="3.14483968494008" a2="2.92716180005117" a3="4.33513870979975" a4="0" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Store Nr="2" Type="position" Value="100 -100 100 0 0 180" ValueJoints="34.4025 123.5205 64.30768 0 0 0 0 0 0" Name="myPointA" Descr="" />
+    <Store Nr="3" Type="position" Value="-100 -100 100 0 0 180" ValueJoints="34.4025 123.5205 64.30768 0 0 0 0 0 0" Name="myPointB" Descr="" />
+    <Store Nr="4" Type="position" Value="100 100 100 0 0 180" ValueJoints="34.4025 123.5205 64.30768 0 0 0 0 0 0" Name="myPointC" Descr="" />
+    <Matrix Nr="5" CntX="5" CntY="5" VarPointA="myPointA" VarPointB="myPointB" VarPointC="myPointC" VarTargetPos="myMatrixPos" VarCntX="myCntX" VarCntY="myCntY" Descr="" />
+    <Linear AbortCondition="False" Nr="6" Source="Variable" vel="300" acc="40" smooth="20" VariableName="myMatrixPos" Descr="" />
+    <Relative AbortCondition="False" Nr="7" acc="40" smooth="0" MoType="cartbase" vel="100" x="0" y="0" z="-20" Descr="" />
+    <Relative AbortCondition="False" Nr="8" acc="40" smooth="0" MoType="cartbase" vel="100" x="0" y="0" z="20" Descr="" />
+    <MatrixEnd Nr="9" Descr="" />
+    <Joint AbortCondition="False" Nr="10" Source="Numerical" velPercent="50" acc="40" smooth="20" a1="3.14483968494008" a2="2.92716180005117" a3="4.33513870979975" a4="0" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+</Program>

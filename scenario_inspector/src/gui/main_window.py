@@ -39,6 +39,15 @@ class ProgramExecutionThread(QThread):
         try:
             self.progress_updated.emit("Starting program execution...")
             
+            # Create inspection folder before starting execution
+            program_data_for_folder = {
+                'name': self.program_data.get('program', {}).get('name', 'unknown_program'),
+                'piece_info': self.piece_info
+            }
+            
+            inspection_folder = self.system_manager.create_inspection_folder(program_data_for_folder)
+            self.progress_updated.emit(f"Created inspection folder: {os.path.basename(inspection_folder)}")
+            
             # Get program stages
             stages = self.program_data.get('program', {}).get('stages', [])
             total_steps = sum(len(stage.get('steps', [])) for stage in stages)

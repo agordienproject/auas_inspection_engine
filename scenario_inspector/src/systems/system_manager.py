@@ -22,7 +22,8 @@ class SystemManager:
         self.current_inspection_folder = None
         
         # Initialize file manager
-        output_dir = config_manager.get_config().get('application', {}).get('output_directory', './output')
+        output_config = config_manager.get_output_config()
+        output_dir = output_config.get('base_directory', './output')
         self.file_manager = FileManager(output_dir)
         
         self._initialize_systems()

@@ -20,3 +20,6 @@ ros2gui/__pycache__/xarm_config.cpython-310.pyc
 *.log
 logs/
 **/logs/
+
+# Ignore output data
+output/

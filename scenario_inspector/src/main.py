@@ -29,7 +29,7 @@ def setup_logging():
     # Create timestamp strings
     now = datetime.now()
     date_folder = now.strftime("%Y-%m-%d")
-    timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = now.strftime("%Y%m%d_%H%M%S")  # New format: YYYYMMDD_HHMMSS
     
     # Construct the full log directory path
     daily_log_dir = os.path.join(log_folder_path, date_folder)

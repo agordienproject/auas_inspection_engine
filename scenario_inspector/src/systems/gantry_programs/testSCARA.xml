@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Program>
+    <Header RobotName="Scara Robot" RobotType="RL-SCR-0100" GripperType=""  VelocitySetting="2" />
+    <Joint AbortCondition="False" Nr="1" Source="Numerical" velPercent="100" acc="40" smooth="0" a1="435" a2="0" a3="0" a4="0" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Joint AbortCondition="False" Nr="2" Source="Numerical" velPercent="100" acc="40" smooth="0" a1="171.5" a2="84.16" a3="96.75" a4="161.64" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Joint AbortCondition="False" Nr="3" Source="Numerical" velPercent="100" acc="40" smooth="0" a1="171.5" a2="-89.99" a3="0" a4="20.34" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Joint AbortCondition="False" Nr="4" Source="Numerical" velPercent="100" acc="40" smooth="0" a1="171.5" a2="-89.99" a3="-80.22" a4="-139.41" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Joint AbortCondition="False" Nr="5" Source="Numerical" velPercent="100" acc="40" smooth="0" a1="435" a2="0" a3="0" a4="0" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+</Program>

@@ -1,12 +1,13 @@
 """
 Date and time utilities for Scenario Inspector
 """
+import os
 from datetime import datetime, timedelta
 from typing import str
 
 def format_inspection_timestamp() -> str:
     """Format current timestamp for inspection folders"""
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 def format_inspection_date() -> str:
     """Format current date for inspection folders"""

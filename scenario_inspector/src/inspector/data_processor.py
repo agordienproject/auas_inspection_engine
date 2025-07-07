@@ -13,7 +13,7 @@ class DataProcessor:
         return folder_path
 
     def save_inspection_data(self, data, folder_path):
-        file_name = f"inspection_data_{datetime.now().strftime('%H-%M-%S')}.json"
+        file_name = f"inspection_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         file_path = os.path.join(folder_path, file_name)
         with open(file_path, 'w') as f:
             json.dump(data, f, indent=4)

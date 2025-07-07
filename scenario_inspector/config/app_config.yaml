@@ -1,5 +1,5 @@
 database:
-  host: "172.21.240.1"
+  host: "145.109.196.64"
   port: 5433
   username: "postgres"
   password: "admin"
@@ -14,7 +14,7 @@ systems:
     type: "scanner_system"
   camera:
     connection_type: "usb"
-    device_id: "Intel Corp"
+    device_id: "Intel Corp. Intel(R) RealSense(TM) Depth Camera 435i"
     timeout: 15
     type: "camera_system"
   table:
@@ -25,9 +25,9 @@ systems:
     type: "rotating_table"
   gantry:
     connection_type: "tcp"
-    # ip: "192.168.3.11"
-    ip: "172.21.240.1"
-    port: 3921
+    ip: "192.168.3.11"
+    # ip: "172.21.240.1"
+    port: 3920
     timeout: 20
     programs_path: "/home/agordien/projects/auas_inspection_engine/scenario_inspector/src/systems/gantry_programs"
     type: "gantry_system"
@@ -39,9 +39,10 @@ ftp:
   base_path: "/aircraft"
 
 output:
-  base_directory: "./output"
+  base_directory: "scenario_inspector/output"
+  inspection_folder_prefix: "inspection_"
   date_format: "%Y-%m-%d"
-  time_format: "%Y-%m-%d_%H-%M-%S"
+  time_format: "%Y%m%d_%H%M%S"
 
 logging:
   level: "DEBUG"

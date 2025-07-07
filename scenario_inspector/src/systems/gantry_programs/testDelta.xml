@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Program>
+    <Header  />
+    <Linear AbortCondition="False" Nr="1" Source="Numerical" vel="200" acc="40" smooth="20" x="-1.382582E-05" y="0" z="105" a="0" b="0" c="180" e1="0" e2="0" e3="0" Descr="" />
+    <Loop Nr="2" Mode="Count" Times="10" Descr="" />
+    <Linear AbortCondition="False" Nr="3" Source="Numerical" vel="500" acc="100" smooth="10" x="0" y="125" z="105" a="0" b="0" c="180" e1="0" e2="0" e3="0" Descr="" />
+    <Linear AbortCondition="False" Nr="4" Source="Numerical" vel="500" acc="100" smooth="10" x="0" y="-125" z="105" a="0" b="0" c="180" e1="0" e2="0" e3="0" Descr="" />
+    <Linear AbortCondition="False" Nr="5" Source="Numerical" vel="500" acc="100" smooth="0" x="0" y="-125" z="70" a="0" b="0" c="180" e1="0" e2="0" e3="0" Descr="" />
+    <Linear AbortCondition="False" Nr="6" Source="Numerical" vel="500" acc="100" smooth="10" x="0" y="-125" z="105" a="0" b="0" c="180" e1="0" e2="0" e3="0" Descr="" />
+    <Linear AbortCondition="False" Nr="7" Source="Numerical" vel="500" acc="100" smooth="10" x="0" y="125" z="105" a="0" b="0" c="180" e1="0" e2="0" e3="0" Descr="" />
+    <Linear AbortCondition="False" Nr="8" Source="Numerical" vel="500" acc="100" smooth="0" x="0" y="125" z="70" a="0" b="0" c="180" e1="0" e2="0" e3="0" Descr="" />
+    <EndLoop Nr="9" Descr="" />
+</Program>
