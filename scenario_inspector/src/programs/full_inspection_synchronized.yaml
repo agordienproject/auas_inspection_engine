@@ -1,0 +1,46 @@
+program:
+  name: "full_inspection_synchronized"
+  description: "Complete inspection with camera, table, and gantry - all synchronized"
+  
+  stages:
+    - stage: 1
+      name: "initialization"
+      together: false    
+      steps:
+        - step: 1
+          name: "initialize_camera"
+          system: "camera"
+          action: "initialize_camera"
+          ready_timeout: 15
+          
+    - stage: 2
+      name: "synchronized_inspection"
+      together: true    
+      steps:
+        - step: 1
+          name: "record_inspection"
+          system: "camera"
+          action: "take_video"
+          recording_time: 30
+          saving_file: true
+        - step: 2
+          name: "rotate_for_360_view"
+          system: "table"
+          action: "rotate"
+          duration: 30
+        - step: 3
+          name: "run_inspection_program"
+          system: "gantry"
+          action: "load_and_run"
+          program_name: "testGantryFG.xml"
+          wait_for_completion: true
+          timeout: 35
+          
+    - stage: 3
+      name: "cleanup"
+      together: false
+      steps:
+        - step: 1
+          name: "stop_camera"
+          system: "camera"
+          action: "stop_camera"

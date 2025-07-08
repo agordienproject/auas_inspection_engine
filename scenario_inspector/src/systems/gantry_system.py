@@ -360,16 +360,30 @@ class GantrySystem(BaseSystem):
             action = step_config.get('action', 'move')
             
             if action == 'move':
-                return self._perform_move(step_config)
+                result = self._perform_move(step_config)
             elif action == 'load_program':
-                return self._load_program(step_config)
+                result = self._load_program(step_config)
             elif action == 'run_program':
-                return self._run_program(step_config)
+                result = self._run_program(step_config)
+            elif action == 'load_and_run':
+                result = self._load_and_run_program(step_config)
             else:
                 raise ValueError(f"Unknown gantry action: {action}")
+            
+            # Always disconnect after completing the step to free resources
+            self.logger.info(f"Step '{step_name}' completed successfully, disconnecting gantry")
+            self.disconnect()
+            
+            return result
                 
         except Exception as e:
             self.logger.error(f"Gantry step execution failed: {e}")
+            # Ensure we disconnect even if there's an error
+            try:
+                self.disconnect()
+                self.logger.info("Disconnected gantry after error")
+            except Exception as disconnect_error:
+                self.logger.warning(f"Failed to disconnect gantry after error: {disconnect_error}")
             raise
     
     def _perform_move(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
@@ -465,6 +479,81 @@ class GantrySystem(BaseSystem):
                 'timestamp': self.get_timestamp()
             }
         }
+    
+    def _load_and_run_program(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Load and run a program in one atomic operation"""
+        program_name = step_config.get('program_name')
+        
+        if not program_name:
+            raise ValueError("Program name is required for load_and_run action")
+        
+        # Determine the program path to use
+        step_program_path = step_config.get('program_path')
+        default_programs_path = self.config.get('programs_path')
+        
+        if step_program_path:
+            programs_path = step_program_path
+            self.logger.info(f"Using step-specific program path: {programs_path}")
+        elif default_programs_path:
+            programs_path = default_programs_path
+            self.logger.info(f"Using default program path from config: {programs_path}")
+        else:
+            programs_path = None
+            self.logger.info("No program path specified, loading program without path")
+        
+        # Get execution configuration
+        wait_for_completion = step_config.get('wait_for_completion', True)
+        timeout = step_config.get('timeout', 300.0)  # Default 5 minutes
+        
+        self.logger.info(f"Loading and running gantry program: {program_name} from path: {programs_path}")
+        self.logger.info(f"Execution settings: wait_for_completion={wait_for_completion}, timeout={timeout}s")
+        
+        try:
+            # Step 1: Load the program
+            self.logger.info(f"Step 1: Loading program {program_name}")
+            load_success = self.gantry_controller.load_program(program_name, programs_path)
+            if not load_success:
+                raise RuntimeError(f"Failed to load program: {program_name}")
+            
+            self.logger.info(f"Program {program_name} loaded successfully")
+            
+            # Step 2: Ensure motors are enabled
+            if not self.gantry_controller.motor_enabled:
+                self.logger.info("Step 2: Enabling gantry motors")
+                if not self.gantry_controller.enable_motors():
+                    raise RuntimeError("Failed to enable gantry motors before starting program")
+            else:
+                self.logger.info("Step 2: Motors already enabled")
+            
+            # Step 3: Start the program
+            self.logger.info(f"Step 3: Starting program {program_name}")
+            run_success = self.gantry_controller.start_program(
+                wait_for_completion=wait_for_completion,
+                timeout=timeout
+            )
+            
+            if not run_success:
+                raise RuntimeError("Failed to start program or program execution failed")
+            
+            completion_message = f"Program {program_name} loaded and completed successfully" if wait_for_completion else f"Program {program_name} loaded and started successfully"
+            
+            return {
+                'status': 'success',
+                'message': completion_message,
+                'data': {
+                    'program_name': program_name,
+                    'program_path': programs_path,
+                    'wait_for_completion': wait_for_completion,
+                    'timeout': timeout,
+                    'action': 'load_and_run',
+                    'timestamp': self.get_timestamp()
+                }
+            }
+            
+        except Exception as e:
+            error_msg = f"Failed to load and run program {program_name}: {str(e)}"
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
     
     def shutdown(self):
         """Shutdown the gantry system"""

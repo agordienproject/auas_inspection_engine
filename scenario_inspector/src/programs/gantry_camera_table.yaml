@@ -1,0 +1,42 @@
+program:
+  name: "gantry_camera_table"
+  description: "Test to use all systems together: gantry, camera, and table"
+  
+  stages:
+    - stage: 1
+      name: "initialization"
+      together: false    
+      steps:
+        - step: 1
+          name: "initialize_camera"
+          system: "camera"
+          action: "initialize_camera"
+          ready_timeout: 15
+    - stage: 2
+      name: "all_running_together"
+      together: true        
+      steps:
+        - step: 1
+          name: "camera_video"
+          system: "camera"
+          action: "take_video"
+          recording_time: 10
+          saving_file: true
+        - step: 2
+          name: "gantry-load"
+          system: "gantry"
+          action: "load_and_run"
+          program_name: "testGantryFG.xml"
+        - step: 3
+          name: "start_rotation"
+          system: "table"
+          action: "rotate"
+          duration: 10
+    - stage: 3
+      name: "cleanup"
+      together: false
+      steps:
+        - step: 1
+          name: "stop_camera"
+          system: "camera"
+          action: "stop_camera"

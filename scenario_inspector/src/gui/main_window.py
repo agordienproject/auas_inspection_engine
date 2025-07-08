@@ -4,8 +4,10 @@ Main window for AUAS Inspection Engine
 import os
 import logging
 import yaml
+import threading
 from datetime import datetime
 from typing import Dict, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QComboBox, QTextEdit, QProgressBar,
                              QGroupBox, QGridLayout, QMessageBox, QFileDialog, 
@@ -55,30 +57,23 @@ class ProgramExecutionThread(QThread):
             
             for stage in stages:
                 stage_name = stage.get('name', f"Stage {stage.get('stage', 'Unknown')}")
-                self.progress_updated.emit(f"Executing stage: {stage_name}")
+                together = stage.get('together', False)
+                
+                self.progress_updated.emit(f"Executing stage: {stage_name} {'(parallel)' if together else '(sequential)'}")
                 
                 # Execute steps in stage
                 steps = stage.get('steps', [])
-                for step in steps:
-                    step_name = step.get('name', f"Step {step.get('step', 'Unknown')}")
-                    system = step.get('system')
-                    
-                    self.progress_updated.emit(f"Executing step: {step_name} on system: {system}")
-                    
-                    # Execute the step using the system manager
-                    try:
-                        result = self.system_manager.execute_step(step)
-                        self.step_completed.emit(step_name)
-                        completed_steps += 1
-                        
-                        # Update progress percentage
-                        progress_percent = int((completed_steps / total_steps) * 100)
-                        self.progress_updated.emit(f"Progress: {progress_percent}% ({completed_steps}/{total_steps})")
-                        
-                    except Exception as e:
-                        self.progress_updated.emit(f"Step {step_name} failed: {str(e)}")
-                        self.execution_finished.emit(False)
-                        return
+                
+                if together and len(steps) > 1:
+                    # Execute steps in parallel
+                    completed_steps += self._execute_steps_parallel(steps, stage_name)
+                else:
+                    # Execute steps sequentially 
+                    completed_steps += self._execute_steps_sequential(steps)
+                
+                # Update progress
+                progress_percent = int((completed_steps / total_steps) * 100)
+                self.progress_updated.emit(f"Stage '{stage_name}' completed. Progress: {progress_percent}% ({completed_steps}/{total_steps})")
             
             self.progress_updated.emit("Program execution completed successfully!")
             self.execution_finished.emit(True)
@@ -90,6 +85,76 @@ class ProgramExecutionThread(QThread):
         finally:
             # Cleanup systems
             self.system_manager.shutdown_all_systems()
+    
+    def _execute_steps_sequential(self, steps):
+        """Execute steps one after another"""
+        completed = 0
+        for step in steps:
+            step_name = step.get('name', f"Step {step.get('step', 'Unknown')}")
+            system = step.get('system')
+            
+            self.progress_updated.emit(f"Executing step: {step_name} on system: {system}")
+            
+            try:
+                result = self.system_manager.execute_step(step)
+                self.step_completed.emit(step_name)
+                completed += 1
+                
+            except Exception as e:
+                self.progress_updated.emit(f"Step {step_name} failed: {str(e)}")
+                self.execution_finished.emit(False)
+                raise
+                
+        return completed
+    
+    def _execute_steps_parallel(self, steps, stage_name):
+        """Execute steps in parallel using threading"""
+        completed = 0
+        
+        def execute_single_step(step):
+            """Execute a single step - to be run in thread"""
+            step_name = step.get('name', f"Step {step.get('step', 'Unknown')}")
+            system = step.get('system')
+            
+            try:
+                self.progress_updated.emit(f"[Parallel] Starting step: {step_name} on system: {system}")
+                result = self.system_manager.execute_step(step)
+                self.step_completed.emit(step_name)
+                self.progress_updated.emit(f"[Parallel] Completed step: {step_name}")
+                return step_name, True, None
+                
+            except Exception as e:
+                error_msg = f"Step {step_name} failed: {str(e)}"
+                self.progress_updated.emit(f"[Parallel] {error_msg}")
+                return step_name, False, error_msg
+        
+        # Execute steps in parallel using ThreadPoolExecutor
+        self.progress_updated.emit(f"Starting {len(steps)} parallel steps in stage: {stage_name}")
+        
+        with ThreadPoolExecutor(max_workers=len(steps)) as executor:
+            # Submit all steps for execution
+            future_to_step = {executor.submit(execute_single_step, step): step for step in steps}
+            
+            # Wait for all steps to complete
+            for future in as_completed(future_to_step):
+                step = future_to_step[future]
+                try:
+                    step_name, success, error_msg = future.result()
+                    if success:
+                        completed += 1
+                    else:
+                        # If any step fails, we should stop execution
+                        self.progress_updated.emit(f"Parallel execution failed: {error_msg}")
+                        self.execution_finished.emit(False)
+                        raise Exception(error_msg)
+                        
+                except Exception as e:
+                    step_name = step.get('name', 'Unknown')
+                    self.progress_updated.emit(f"Exception in parallel step {step_name}: {str(e)}")
+                    raise
+        
+        self.progress_updated.emit(f"All {len(steps)} parallel steps completed successfully")
+        return completed
 
 
 class InspectionMainWindow(QMainWindow):

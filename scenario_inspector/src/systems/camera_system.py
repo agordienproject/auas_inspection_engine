@@ -138,6 +138,9 @@ class CameraController:
             if not ROS2_AVAILABLE:
                 return self._start_camera_opencv()
             
+            # First, ensure no existing camera processes are running
+            self._cleanup_existing_camera_processes()
+            
             # Launch RealSense camera via ROS2 (similar to GUI implementation)
             cmd = [
                 "bash", "-c",
@@ -171,6 +174,24 @@ class CameraController:
             self.capturing = False
             raise RuntimeError(f"Failed to start camera: {e}")
     
+    def _cleanup_existing_camera_processes(self):
+        """Clean up any existing camera processes"""
+        try:
+            # Kill any existing RealSense processes
+            subprocess.run([
+                "pkill", "-f", "realsense2_camera_node"
+            ], check=False)
+            
+            subprocess.run([
+                "pkill", "-f", "ros2 launch realsense2_camera"
+            ], check=False)
+            
+            # Wait for processes to clean up
+            time.sleep(2)
+            
+        except Exception as e:
+            print(f"[WARN] Error cleaning up camera processes: {e}")
+    
     def _start_camera_opencv(self):
         """Fallback start using OpenCV"""
         self.capturing = True
@@ -195,15 +216,28 @@ class CameraController:
                 try:
                     # Kill the process group
                     os.killpg(os.getpgid(self.camera_process.pid), signal.SIGTERM)
+                    # Wait a bit for graceful shutdown
+                    time.sleep(1)
+                    # Force kill if still running
+                    os.killpg(os.getpgid(self.camera_process.pid), signal.SIGKILL)
                 except ProcessLookupError:
                     pass  # Process already terminated
-                
-                # Also try pkill as fallback
-                subprocess.run([
-                    "pkill", "-f", "ros2 launch realsense2_camera rs_launch.py"
-                ], check=False)
+                except Exception:
+                    pass  # Ignore other errors
                 
                 self.camera_process = None
+            
+            # Kill any remaining RealSense processes more aggressively
+            subprocess.run([
+                "pkill", "-f", "realsense2_camera_node"
+            ], check=False)
+            
+            subprocess.run([
+                "pkill", "-f", "ros2 launch realsense2_camera"
+            ], check=False)
+            
+            # Wait a moment for processes to clean up
+            time.sleep(2)
             
             self.capturing = False
             return True
@@ -397,10 +431,14 @@ class CameraSystem(BaseSystem):
             # Execute the step based on step configuration
             action = step_config.get('action', 'take_photo')
             
-            if action == 'take_photo':
+            if action == 'initialize_camera':
+                return self._initialize_camera(step_config)
+            elif action == 'take_photo':
                 return self._take_photo(step_config)
             elif action == 'take_video':
                 return self._take_video(step_config)
+            elif action == 'stop_camera':
+                return self._stop_camera_action(step_config)
             elif action == 'show_camera':
                 return self._show_camera(step_config)
             # Legacy support for old action names
@@ -435,15 +473,110 @@ class CameraSystem(BaseSystem):
         os.makedirs(output_dir, exist_ok=True)
         return os.path.join(output_dir, default_filename)
     
-    def _take_photo(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Take a single photo using ROS2 camera feed"""
-        self.logger.info("Taking photo with ROS2 camera")
+    def _initialize_camera(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Initialize camera and wait for it to be ready"""
+        self.logger.info("Initializing camera and waiting for ROS2 node to be ready")
         
-        # Start camera if not already capturing
+        # Clean up any existing camera processes first
+        if self.camera_controller.capturing:
+            self.logger.info("Camera already running, stopping previous instance")
+            self.camera_controller.stop_camera()
+        
+        try:
+            # Start camera
+            success = self.camera_controller.start_camera()
+            if not success:
+                raise RuntimeError("Failed to start camera")
+            
+            # Wait for camera to be fully ready and receiving images
+            self.logger.info("Waiting for camera to be ready and receiving images...")
+            ready_timeout = step_config.get('ready_timeout', 10)  # Default 10 seconds
+            wait_interval = 0.5
+            waited = 0.0
+            
+            while waited < ready_timeout:
+                if (ROS2_AVAILABLE and 
+                    self.camera_controller.ros2_node and 
+                    self.camera_controller.ros2_node.current_image is not None):
+                    self.logger.info(f"Camera ready after {waited:.1f}s - receiving images")
+                    break
+                elif not ROS2_AVAILABLE:
+                    # For fallback mode, just wait a bit
+                    self.logger.info(f"Camera ready after {waited:.1f}s - fallback mode")
+                    break
+                
+                time.sleep(wait_interval)
+                waited += wait_interval
+                
+                if waited % 2.0 < wait_interval:  # Log every 2 seconds
+                    self.logger.info(f"Still waiting for camera... ({waited:.1f}s / {ready_timeout}s)")
+            
+            if waited >= ready_timeout:
+                self.logger.warning(f"Camera initialization timeout after {ready_timeout}s")
+                return {
+                    'status': 'warning',
+                    'message': f'Camera initialized but may not be fully ready (timeout after {ready_timeout}s)',
+                    'data': {
+                        'action': 'initialize_camera',
+                        'ready_timeout': ready_timeout,
+                        'waited_time': waited,
+                        'ros2_enabled': ROS2_AVAILABLE,
+                        'timestamp': self.get_timestamp()
+                    }
+                }
+            
+            return {
+                'status': 'success',
+                'message': f'Camera initialized and ready (waited {waited:.1f}s)',
+                'data': {
+                    'action': 'initialize_camera',
+                    'ready_time': waited,
+                    'ready_timeout': ready_timeout,
+                    'ros2_enabled': ROS2_AVAILABLE,
+                    'device_id': self.camera_controller.device_id,
+                    'timestamp': self.get_timestamp()
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Camera initialization failed: {e}")
+            raise RuntimeError(f"Camera initialization failed: {e}")
+    
+    def _stop_camera_action(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Stop camera and clean up all processes"""
+        self.logger.info("Stopping camera and cleaning up processes")
+        
+        try:
+            success = self.camera_controller.stop_camera()
+            
+            if success:
+                message = "Camera stopped and processes cleaned up successfully"
+            else:
+                message = "Camera stop completed with warnings"
+            
+            return {
+                'status': 'success',
+                'message': message,
+                'data': {
+                    'action': 'stop_camera',
+                    'cleanup_success': success,
+                    'timestamp': self.get_timestamp()
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error stopping camera: {e}")
+            raise RuntimeError(f"Error stopping camera: {e}")
+    
+    def _take_photo(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Take a single photo using ROS2 camera feed (camera must be initialized first)"""
+        self.logger.info("Taking photo with camera")
+        
+        # Check if camera is ready
         if not self.camera_controller.capturing:
-            self.logger.info("Starting camera for photo capture")
+            self.logger.warning("Camera not initialized, attempting to start...")
             self.camera_controller.start_camera()
-            time.sleep(3)  # Wait for camera to stabilize and ROS2 to connect
+            time.sleep(3)  # Basic wait, but recommend using initialize_camera first
         
         # Generate output path
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -455,7 +588,7 @@ class CameraSystem(BaseSystem):
             
             result = {
                 'status': 'success',
-                'message': 'Photo captured successfully using ROS2 camera',
+                'message': 'Photo captured successfully',
                 'data': {
                     'image_path': saved_path,
                     'timestamp': self.get_timestamp(),
@@ -478,7 +611,7 @@ class CameraSystem(BaseSystem):
             raise RuntimeError(f"Photo capture failed: {e}")
     
     def _take_video(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Take a video with specified recording time"""
+        """Take a video with specified recording time (camera must be initialized first)"""
         self.logger.info("Starting video recording")
         
         recording_time = step_config.get('recording_time', 10)  # Default 10 seconds
@@ -486,17 +619,18 @@ class CameraSystem(BaseSystem):
         resolution = parameters.get('resolution', '1920x1080')
         fps = parameters.get('fps', 30)
         
+        # Check if camera is ready
+        if not self.camera_controller.capturing:
+            self.logger.warning("Camera not initialized, attempting to start...")
+            self.camera_controller.start_camera()
+            time.sleep(3)  # Basic wait, but recommend using initialize_camera first
+        
         # Generate output path
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         default_filename = f'video_{timestamp}.mp4'
         output_path = self._get_output_path(step_config, default_filename)
         
         try:
-            # Start camera
-            success = self.camera_controller.start_camera()
-            if not success:
-                raise RuntimeError("Failed to start camera for recording")
-            
             # Record video for specified time using OpenCV
             saved_path = self._record_video_opencv(output_path, recording_time, resolution, fps)
             
@@ -567,23 +701,29 @@ class CameraSystem(BaseSystem):
             self.logger.info(f"Recording video: {duration}s at {fps}fps ({expected_frames} frames)")
             
             if ROS2_AVAILABLE and self.camera_controller.ros2_node:
-                # Use ROS2 camera feed
+                # Use ROS2 camera feed - SAME METHOD AS GUI (no spinning)
+                last_frame_time = start_time
+                
                 while (time.time() - start_time) < duration:
-                    if self.camera_controller.ros2_node.current_image is not None:
-                        frame = self.camera_controller.ros2_node.current_image.copy()
-                        
-                        # Resize frame to target resolution
-                        frame_resized = cv2.resize(frame, (width, height))
-                        out.write(frame_resized)
-                        frame_count += 1
-                        
-                        # Display progress
-                        if frame_count % (fps * 2) == 0:  # Every 2 seconds
-                            elapsed = time.time() - start_time
-                            self.logger.info(f"Recording... {elapsed:.1f}s / {duration}s")
+                    current_time = time.time()
                     
-                    # Control frame rate
-                    time.sleep(1.0 / fps)
+                    # Only write frames at the target FPS to avoid overwhelming
+                    if current_time - last_frame_time >= (1.0 / fps):
+                        if self.camera_controller.ros2_node.current_image is not None:
+                            frame = self.camera_controller.ros2_node.current_image.copy()
+                            # Resize frame to target resolution
+                            frame_resized = cv2.resize(frame, (width, height))
+                            out.write(frame_resized)
+                            frame_count += 1
+                            last_frame_time = current_time
+                            
+                            # Display progress every 2 seconds
+                            if frame_count % (fps * 2) == 0:
+                                elapsed = time.time() - start_time
+                                self.logger.info(f"Recording... {elapsed:.1f}s / {duration}s")
+                    
+                    # Small sleep to prevent busy waiting - DON'T spin ROS2 here
+                    time.sleep(0.01)  # 10ms sleep, let ROS2 handle callbacks
             else:
                 # Fallback to OpenCV
                 cap = cv2.VideoCapture(0)
@@ -665,6 +805,9 @@ class CameraSystem(BaseSystem):
             # Stop recording if active
             if self.camera_controller.capturing:
                 self.camera_controller.stop_camera()
+            
+            # Clean up any remaining processes
+            self.camera_controller._cleanup_existing_camera_processes()
             
             # Disconnect
             self.disconnect()

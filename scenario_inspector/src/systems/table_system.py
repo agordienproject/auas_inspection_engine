@@ -200,17 +200,33 @@ class TableSystem(BaseSystem):
     
     def _start_rotation(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
         """Start table rotation"""
-        self.logger.info("Starting table rotation")
+        duration = step_config.get('duration', 0)
+        
+        if duration > 0:
+            self.logger.info(f"Starting table rotation for {duration} seconds")
+        else:
+            self.logger.info("Starting table rotation (continuous)")
         
         success = self.table_controller.start_rotation()
         if not success:
             raise RuntimeError("Failed to start table rotation")
         
+        # If duration is specified, wait for that time then stop
+        if duration > 0:
+            self.logger.info(f"Waiting {duration} seconds...")
+            time.sleep(duration)
+            
+            self.logger.info("Duration completed, stopping rotation")
+            stop_success = self.table_controller.stop_rotation()
+            if not stop_success:
+                self.logger.warning("Failed to stop rotation after duration")
+        
         return {
             'status': 'success',
-            'message': 'Table rotation started',
+            'message': f'Table rotation {"completed" if duration > 0 else "started"}',
             'data': {
                 'action': 'rotate',
+                'duration': duration,
                 'timestamp': self.get_timestamp()
             }
         }

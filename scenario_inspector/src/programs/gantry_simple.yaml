@@ -11,12 +11,12 @@ program:
       together: false        
       steps:
         - step: 1
-          name: "gantry-load"
+          name: "gantry-FG"
           system: "gantry"
-          action: "load_program"
-          program_name: "Presenteren.xml"
-          
+          action: "load_and_run"
+          program_name: "testGantryFG.xml"
         - step: 2
-          name: "gantry_start"
+          name: "gantry-delta"
           system: "gantry"
-          action: "run_program"
+          action: "load_and_run"
+          program_name: "testGantryRG.xml"
