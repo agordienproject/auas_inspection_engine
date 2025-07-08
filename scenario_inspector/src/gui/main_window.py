@@ -27,6 +27,7 @@ class ProgramExecutionThread(QThread):
     progress_updated = pyqtSignal(str)  # Progress message
     execution_finished = pyqtSignal(bool)  # Success status
     step_completed = pyqtSignal(str)  # Step name
+    progress_percentage = pyqtSignal(int)  # Progress percentage for progress bar
     
     def __init__(self, program_data, piece_info, config_manager):
         super().__init__()
@@ -55,6 +56,9 @@ class ProgramExecutionThread(QThread):
             total_steps = sum(len(stage.get('steps', [])) for stage in stages)
             completed_steps = 0
             
+            # Initialize progress
+            self.progress_percentage.emit(0)
+            
             for stage in stages:
                 stage_name = stage.get('name', f"Stage {stage.get('stage', 'Unknown')}")
                 together = stage.get('together', False)
@@ -66,16 +70,18 @@ class ProgramExecutionThread(QThread):
                 
                 if together and len(steps) > 1:
                     # Execute steps in parallel
-                    completed_steps += self._execute_steps_parallel(steps, stage_name)
+                    completed_steps += self._execute_steps_parallel(steps, stage_name, completed_steps, total_steps)
                 else:
                     # Execute steps sequentially 
-                    completed_steps += self._execute_steps_sequential(steps)
+                    completed_steps += self._execute_steps_sequential(steps, completed_steps, total_steps)
                 
                 # Update progress
-                progress_percent = int((completed_steps / total_steps) * 100)
+                progress_percent = int((completed_steps / total_steps) * 100) if total_steps > 0 else 100
+                self.progress_percentage.emit(progress_percent)
                 self.progress_updated.emit(f"Stage '{stage_name}' completed. Progress: {progress_percent}% ({completed_steps}/{total_steps})")
             
             self.progress_updated.emit("Program execution completed successfully!")
+            self.progress_percentage.emit(100)
             self.execution_finished.emit(True)
             
         except Exception as e:
@@ -86,7 +92,7 @@ class ProgramExecutionThread(QThread):
             # Cleanup systems
             self.system_manager.shutdown_all_systems()
     
-    def _execute_steps_sequential(self, steps):
+    def _execute_steps_sequential(self, steps, current_completed, total_steps):
         """Execute steps one after another"""
         completed = 0
         for step in steps:
@@ -100,6 +106,11 @@ class ProgramExecutionThread(QThread):
                 self.step_completed.emit(step_name)
                 completed += 1
                 
+                # Update progress bar after each step
+                new_completed = current_completed + completed
+                progress_percent = int((new_completed / total_steps) * 100) if total_steps > 0 else 0
+                self.progress_percentage.emit(progress_percent)
+                
             except Exception as e:
                 self.progress_updated.emit(f"Step {step_name} failed: {str(e)}")
                 self.execution_finished.emit(False)
@@ -107,7 +118,7 @@ class ProgramExecutionThread(QThread):
                 
         return completed
     
-    def _execute_steps_parallel(self, steps, stage_name):
+    def _execute_steps_parallel(self, steps, stage_name, current_completed, total_steps):
         """Execute steps in parallel using threading"""
         completed = 0
         
@@ -142,6 +153,10 @@ class ProgramExecutionThread(QThread):
                     step_name, success, error_msg = future.result()
                     if success:
                         completed += 1
+                        # Update progress bar as each parallel step completes
+                        new_completed = current_completed + completed
+                        progress_percent = int((new_completed / total_steps) * 100) if total_steps > 0 else 0
+                        self.progress_percentage.emit(progress_percent)
                     else:
                         # If any step fails, we should stop execution
                         self.progress_updated.emit(f"Parallel execution failed: {error_msg}")
@@ -751,6 +766,7 @@ class InspectionMainWindow(QMainWindow):
         self.execution_thread.progress_updated.connect(self.update_progress)
         self.execution_thread.execution_finished.connect(self.execution_finished)
         self.execution_thread.step_completed.connect(self.step_completed)
+        self.execution_thread.progress_percentage.connect(self.update_progress_bar)
         
         # Start thread
         self.execution_thread.start()
@@ -769,6 +785,10 @@ class InspectionMainWindow(QMainWindow):
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.progress_text.append(f"[{timestamp}] {message}")
         
+    def update_progress_bar(self, percentage):
+        """Update progress bar percentage"""
+        self.progress_bar.setValue(percentage)
+        
     def step_completed(self, step_name):
         """Handle step completion"""
         self.update_progress(f"✓ Step completed: {step_name}")
@@ -780,7 +800,6 @@ class InspectionMainWindow(QMainWindow):
         self.stop_execution_btn.setEnabled(False)
         
         if success:
-            self.progress_bar.setValue(100)
             self.update_progress("✓ Program execution completed successfully!")
             QMessageBox.information(self, "Success", "Inspection program completed successfully!")
         else:
