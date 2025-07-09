@@ -1,5 +1,5 @@
 database:
-  host: "192.168.68.126"
+  host: "145.109.196.64"
   port: 5433
   username: "postgres"
   password: "admin"
@@ -25,9 +25,9 @@ systems:
     type: "rotating_table"
   gantry:
     connection_type: "tcp"
-    # ip: "192.168.3.11"
-    ip: "192.168.68.126"
-    port: 3921
+    ip: "192.168.3.11"
+    # ip: "192.168.68.126"
+    port: 3920
     timeout: 20
     programs_path: "/home/agordien/projects/auas_inspection_engine/scenario_inspector/src/systems/gantry_programs"
     type: "gantry_system"
@@ -45,7 +45,7 @@ output:
   time_format: "%Y%m%d_%H%M%S"
 
 logging:
-  level: "DEBUG"
+  level: "INFO"
   log_folder_path: "scenario_inspector/logs"
   log_file_prefix: "scenario_inspector"
   console: true

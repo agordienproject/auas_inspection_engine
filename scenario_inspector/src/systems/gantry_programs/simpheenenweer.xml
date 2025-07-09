@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Program>
+    <Header RobotName="igus Gantry" RobotType="DLE-RG-0012" GripperType="" Software="iRC V902-14-003" VelocitySetting="2" />
+    <Joint AbortCondition="False" Nr="1" Source="Numerical" velPercent="10" acc="50" smooth="50" a1="0" a2="0" a3="250" a4="0" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Joint AbortCondition="False" Nr="2" Source="Numerical" velPercent="10" acc="50" smooth="50" a1="0" a2="400" a3="250" a4="0" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Wait Nr="3" Type="Time" Seconds="1" Descr="" />
+</Program>

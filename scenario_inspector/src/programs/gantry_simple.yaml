@@ -14,9 +14,9 @@ program:
           name: "gantry-FG"
           system: "gantry"
           action: "load_and_run"
-          program_name: "testGantryFG.xml"
-        - step: 2
-          name: "gantry-delta"
-          system: "gantry"
-          action: "load_and_run"
-          program_name: "testGantryRG.xml"
+          program_name: "simpheenenweer.xml"
+        # - step: 2
+        #   name: "gantry-delta"
+        #   system: "gantry"
+        #   action: "load_and_run"
+        #   program_name: "testGantryRG.xml"

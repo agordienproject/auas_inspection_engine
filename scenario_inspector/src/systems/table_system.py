@@ -3,6 +3,7 @@ Table System using serial connection functions from GUI application
 """
 import logging
 import serial
+import serial.tools.list_ports
 import time
 from typing import Dict, Any, Optional
 
@@ -21,6 +22,11 @@ class TableController:
     def connect(self, port: str, baudrate: int = 9600, timeout: float = 1.0):
         """Connect to table via serial"""
         try:
+            # Check if the port exists first
+            available_ports = [port_info.device for port_info in serial.tools.list_ports.comports()]
+            if port not in available_ports:
+                raise ConnectionError(f"Port {port} not found. Available ports: {available_ports}")
+            
             self.port = port
             self.baudrate = baudrate
             
@@ -32,6 +38,8 @@ class TableController:
             
             if self.serial_connection.is_open:
                 self.connected = True
+                # Wait a bit for Arduino to initialize (like the GUI does)
+                time.sleep(2)
                 return True
             else:
                 return False
@@ -58,6 +66,8 @@ class TableController:
         
         try:
             self.serial_connection.write((command + '\n').encode())
+            # Add a small delay to ensure command is processed
+            time.sleep(0.1)
             return True
         except Exception as e:
             raise RuntimeError(f"Failed to send command: {e}")
@@ -107,11 +117,17 @@ class TableSystem(BaseSystem):
     def connect(self) -> bool:
         """Connect to the table"""
         try:
-            port = self.config.get('port', '/dev/ttyUSB0')
+            port = self.config.get('port', '/dev/ttyACM0')
             baudrate = self.config.get('baudrate', 9600)
-            timeout = self.config.get('timeout', 10.0)
+            timeout = self.config.get('timeout', 1.0)  # Use shorter timeout like GUI
             
             self.logger.info(f"Attempting to connect to table at {port} (baudrate: {baudrate})")
+            
+            # Check if Arduino is connected (like GUI does)
+            available_ports = [port_info.device for port_info in serial.tools.list_ports.comports()]
+            if port not in available_ports:
+                self.logger.error(f"Arduino not detected at {port}. Available ports: {available_ports}")
+                return False
             
             success = self.table_controller.connect(port, baudrate, timeout)
             if success:
@@ -139,6 +155,29 @@ class TableSystem(BaseSystem):
     def test_connection(self) -> Dict[str, Any]:
         """Test table connection"""
         try:
+            port = self.config.get('port', '/dev/ttyACM0')
+            
+            # First check if Arduino is detected (like GUI does)
+            available_ports = [port_info.device for port_info in serial.tools.list_ports.comports()]
+            if port not in available_ports:
+                return {
+                    'status': 'not_available',
+                    'message': f'Arduino not detected at {port}',
+                    'details': {
+                        'available_ports': available_ports,
+                        'expected_port': port
+                    }
+                }
+            
+            # Try to connect if not already connected
+            if not self.table_controller.connected:
+                if not self.connect():
+                    return {
+                        'status': 'not_available',
+                        'message': 'Table connection failed - check serial port'
+                    }
+            
+            # Test if the connection is working
             if self.table_controller.test_connection():
                 return {
                     'status': 'available',
@@ -149,21 +188,11 @@ class TableSystem(BaseSystem):
                     }
                 }
             else:
-                # Try to connect
-                if self.connect():
-                    return {
-                        'status': 'available',
-                        'message': 'Table connection established',
-                        'details': {
-                            'port': self.table_controller.port,
-                            'baudrate': self.table_controller.baudrate
-                        }
-                    }
-                else:
-                    return {
-                        'status': 'not_available',
-                        'message': 'Table connection failed - check serial port'
-                    }
+                return {
+                    'status': 'not_available',
+                    'message': 'Table connection test failed'
+                }
+                
         except Exception as e:
             self.logger.error(f"Table connection test failed: {e}")
             return {
@@ -207,9 +236,12 @@ class TableSystem(BaseSystem):
         else:
             self.logger.info("Starting table rotation (continuous)")
         
+        self.logger.info("Sending rotate_table command...")
         success = self.table_controller.start_rotation()
         if not success:
             raise RuntimeError("Failed to start table rotation")
+        
+        self.logger.info("Rotate command sent successfully")
         
         # If duration is specified, wait for that time then stop
         if duration > 0:
@@ -220,6 +252,8 @@ class TableSystem(BaseSystem):
             stop_success = self.table_controller.stop_rotation()
             if not stop_success:
                 self.logger.warning("Failed to stop rotation after duration")
+            else:
+                self.logger.info("Table rotation stopped successfully")
         
         return {
             'status': 'success',
