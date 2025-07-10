@@ -1,0 +1,22 @@
+program:
+  name: "xarm_simple"
+  description: "Simple test for xarm system"
+  piece_info:
+    name_piece: "Landing gear"
+    ref_piece: "0054-0544"
+  
+  stages:
+    - stage: 1
+      name: "xarm"
+      together: false        
+      steps:
+        - step: 1
+          name: "load-simple-program"
+          system: "xarm"
+          action: "load_program"
+          program_name: "move_arm.py"
+        - step: 2
+          name: "start-program"
+          system: "xarm"
+          action: "start_program"
+          program_name: "move_arm.py"

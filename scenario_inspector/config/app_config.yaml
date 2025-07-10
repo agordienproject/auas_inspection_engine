@@ -31,6 +31,12 @@ systems:
     timeout: 20
     programs_path: "/home/agordien/projects/auas_inspection_engine/scenario_inspector/src/systems/gantry_programs"
     type: "gantry_system"
+  xarm:
+    connection_type: "tcp"
+    ip: "192.168.1.222"
+    timeout: 30
+    programs_path: "/home/agordien/projects/auas_inspection_engine/scenario_inspector/src/systems/xarm_programs"
+    type: "xarm_system"
 
 ftp:
   server: "ftp://inspection-server"

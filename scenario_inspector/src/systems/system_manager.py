@@ -9,6 +9,7 @@ from systems.scanner_system import ScannerSystem
 from systems.gantry_system import GantrySystem
 from systems.table_system import TableSystem
 from systems.camera_system import CameraSystem
+from systems.xarm_system import XarmSystem
 from utils.file_manager import FileManager
 
 
@@ -55,6 +56,8 @@ class SystemManager:
             return TableSystem(system_name, system_config)
         elif system_type == 'gantry_system' or system_name.lower() == 'gantry':
             return GantrySystem(system_name, system_config)
+        elif system_type == 'xarm_system' or system_name.lower() == 'xarm':
+            return XarmSystem(system_name, system_config)
         else:
             self.logger.warning(f"Unknown system type: {system_type} for system: {system_name}")
             return None

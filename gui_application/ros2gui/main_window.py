@@ -1,22 +1,49 @@
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from PyQt5.QtCore import QTimer
-from rclpy.node import Node
-from cv_bridge import CvBridge
 from . import utils
 from .gantry_config import GantryConfigWindow
-from .camera_config import CameraConfigWindow
+# from .camera_config import CameraConfigWindow  # Disabled for now - requires ROS2
 from .table_config import TableConfigWindow
-from .xarm_config import XarmConfigWindow
+from .xarm_config import XarmConfigWindow  # Use simple SDK version instead
 from .scanner_config import ScannerConfigWindow
 
-class ROS2GuiApp(Node, QWidget):
+# No ROS2 required for xArm SDK version
+print("🎯 Running in standalone mode (xArm SDK, no ROS2 required)")
+ROS2_AVAILABLE = False
+
+# Create dummy classes for compatibility
+class Node:
+    def __init__(self, name): pass
+    def get_topic_names_and_types(self): return []
+    def create_client(self, *args): return None
+
+class CvBridge:
+    def imgmsg_to_cv2(self, *args): return None
+
+
+class ROS2GuiApp(QWidget):
     def __init__(self):
-        Node.__init__(self, 'ros2_gui_launcher')
         QWidget.__init__(self)
-        self.setWindowTitle("ROS 2 GUI Launcher")
+        self.setWindowTitle("Inspection System GUI")
         self.setGeometry(100, 100, 500, 400)
-        self.bridge = CvBridge()
+        
+        # Initialize ROS2 components only if available
+        if ROS2_AVAILABLE:
+            try:
+                import rclpy
+                rclpy.init()
+                self.node = Node('inspection_gui_node')
+                self.bridge = CvBridge()
+                print("✅ ROS2 node initialized")
+            except Exception as e:
+                print(f"⚠️ ROS2 initialization failed: {e}")
+                self.node = None
+                self.bridge = None
+        else:
+            self.node = None
+            self.bridge = None
+            
         self.image_data = None
         self.timer = QTimer()
         self.processes = {}
@@ -119,11 +146,14 @@ class ROS2GuiApp(Node, QWidget):
         self.stop_process("rotate_table", match="python3 rotate_table.py")
 
     def open_camera_config(self):
-        if not utils.check_camera_connection():
-            print("[WARN] Camera not detected.")
-            return
-        self.camera_window = CameraConfigWindow(self, self.bridge)
-        self.camera_window.show()
+        # Camera disabled for now - requires ROS2
+        print("⚠️ Camera config requires ROS2 - currently disabled")
+        return
+        # if not utils.check_camera_connection():
+        #     print("[WARN] Camera not detected.")
+        #     return
+        # self.camera_window = CameraConfigWindow(self, self.bridge)
+        # self.camera_window.show()
 
     def image_callback(self, msg):
         try:
@@ -137,7 +167,9 @@ class ROS2GuiApp(Node, QWidget):
         self.gantry_window.show()
 
     def open_xarm_config(self):
-        self.xarm_window = XarmConfigWindow(self)
+        # Pass the node only if ROS2 is available (for compatibility)
+        parent_node = self.node if hasattr(self, 'node') and self.node else None
+        self.xarm_window = XarmConfigWindow(parent_node)
         self.xarm_window.show()
 
     def open_scanner_config(self):
@@ -150,7 +182,7 @@ class ROS2GuiApp(Node, QWidget):
         try:
             import sys
             sys.path.insert(0, '/home/agordien/projects/auas_inspection_engine/scanCONTROL-Linux-SDK-1-0-1/python_bindings')
-            import pylinllt as llt
-            return True
+            # import pylinllt as llt  # Temporarily disabled
+            return False  # Disabled for now
         except ImportError:
             return False
