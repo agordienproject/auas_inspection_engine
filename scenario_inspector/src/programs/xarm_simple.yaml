@@ -11,11 +11,6 @@ program:
       together: false        
       steps:
         - step: 1
-          name: "load-simple-program"
-          system: "xarm"
-          action: "load_program"
-          program_name: "move_arm.py"
-        - step: 2
           name: "start-program"
           system: "xarm"
           action: "start_program"
