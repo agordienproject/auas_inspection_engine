@@ -1,0 +1,21 @@
+program:
+  name: "camera_table"
+  description: "Take video with camera while rotating table (auto-stop)"
+  
+  stages:
+    - stage: 1
+      name: "camera_table_rotation"
+      together: true    
+      steps:
+        - step: 1
+          name: "camera"
+          system: "camera"
+          action: "take_video"
+          recording_time: 10
+          saving_file: true
+        - step: 2
+          name: "start_rotation"
+          system: "table"
+          action: "rotate"
+          duration: 10
+

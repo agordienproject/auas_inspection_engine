@@ -1,0 +1,24 @@
+program:
+  name: "camera_photo_video"
+  description: "Take picture and video with camera system"
+  
+  stages:
+    - stage: 1
+      name: "camera_photo"
+      together: false    
+      steps:
+        - step: 1
+          name: "camera"
+          system: "camera"
+          action: "take_photo"
+          saving_file: true
+    - stage: 2
+      name: "camera_video"
+      together: false
+      steps:
+        - step: 1
+          name: "camera"
+          system: "camera"
+          action: "take_video"
+          record_time: 10
+          saving_file: true

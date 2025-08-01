@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Program>
+    <Joint AbortCondition="false" Nr="1" Source="Numerical" velPercent="80" acc="50" smooth="0" a1="0" a2="0" a3="0" a4="90" a5="0" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Wait Nr="2" Type="Time" Seconds="0.5" Descr="" />
+    <Joint AbortCondition="false" Nr="3" Source="Numerical" velPercent="80" acc="50" smooth="0" a1="-45" a2="-45" a3="25" a4="45" a5="45" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Wait Nr="4" Type="Time" Seconds="0.5" Descr="" />
+    <Joint AbortCondition="false" Nr="5" Source="Numerical" velPercent="80" acc="50" smooth="0" a1="0" a2="0" a3="0" a4="90" a5="-45" a6="0" e1="0" e2="0" e3="0" Descr="" />
+    <Wait Nr="6" Type="Time" Seconds="0.5" Descr="" />
+    <Linear AbortCondition="false" Nr="7" Source="Numerical" vel="100" acc="100" smooth="0" UserFrame="#base" x="400" y="-180" z="65" a="0" b="0" c="-180" e1="0" e2="0" e3="0" Descr="" />
+    <Wait Nr="8" Type="Time" Seconds="0.5" Descr="" />
+    <Relative AbortCondition="false" Nr="9" acc="100" smooth="0" UserFrame="#base" MoType="cartbase" vel="100" x="0" y="400" z="0" e1="0" e2="0" e3="0" Descr="" />
+    <Wait Nr="10" Type="Time" Seconds="0.5" Descr="" />
+    <Relative AbortCondition="false" Nr="11" acc="100" smooth="0" UserFrame="#base" MoType="cartbase" vel="100" x="0" y="-200" z="0" e1="0" e2="0" e3="0" Descr="" />
+    <Wait Nr="12" Type="Time" Seconds="0.5" Descr="" />
+    <Relative AbortCondition="false" Nr="13" acc="100" smooth="0" UserFrame="#base" MoType="cartbase" vel="100" x="150" y="0" z="0" e1="0" e2="0" e3="0" Descr="" />
+    <Wait Nr="14" Type="Time" Seconds="0.5" Descr="" />
+    <Linear AbortCondition="false" Nr="15" Source="Numerical" vel="100" acc="100" smooth="0" UserFrame="#base" x="400" y="0" z="65" a="0" b="0" c="-180" e1="0" e2="0" e3="0" Descr="" />
+    <Wait Nr="16" Type="Time" Seconds="0.5" Descr="" />
+    <Linear AbortCondition="false" Nr="17" Source="Numerical" vel="100" acc="100" smooth="0" UserFrame="#base" x="270" y="0" z="314.5" a="0" b="0" c="-180" e1="0" e2="0" e3="0" Descr="" />
+    <Wait Nr="18" Type="Time" Seconds="0.5" Descr="" />
+</Program>

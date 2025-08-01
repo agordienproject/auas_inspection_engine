@@ -1,0 +1,14 @@
+program:
+  name: "camera_photo"
+  description: "Take picture with camera system"
+  
+  stages:
+    - stage: 1
+      name: "camera_photo"
+      together: false    
+      steps:
+        - step: 1
+          name: "camera"
+          system: "camera"
+          action: "take_photo"
+          saving_file: true

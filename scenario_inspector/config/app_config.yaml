@@ -1,0 +1,66 @@
+database:
+  host: "145.109.213.243"
+  port: 5433
+  username: "postgres"
+  password: "admin"
+  database: "lab_inspection"
+
+systems:
+  scanControl:
+    connection_type: "tcp"
+    llt_path: "/home/agordien/projects/auas_inspection_engine/scanCONTROL-Linux-SDK-1-0-1/python_bindings"
+    ip: "192.168.3.2"
+    timeout: 30
+    type: "scanner_system"
+  camera:
+    connection_type: "usb"
+    device_id: "Intel Corp. Intel(R) RealSense(TM) Depth Camera 435i"
+    timeout: 15
+    type: "camera_system"
+  table:
+    connection_type: "serial"
+    port: "/dev/ttyACM0"
+    baudrate: 9600
+    timeout: 10
+    type: "rotating_table"
+  gantry:
+    connection_type: "tcp"
+    ip: "192.168.3.11"
+    # ip: "192.168.68.126"
+    port: 3920
+    timeout: 20
+    programs_path: "/home/agordien/projects/auas_inspection_engine/scenario_inspector/src/systems/gantry_programs"
+    type: "gantry_system"
+  xarm:
+    connection_type: "tcp"
+    ip: "192.168.1.222"
+    timeout: 30
+    programs_path: "/home/agordien/projects/auas_inspection_engine/scenario_inspector/src/systems/xarm_programs"
+    type: "xarm_system"
+
+ftp:
+  server: "ftp://inspection-server"
+  username: "ftp_user"
+  password: "ftp_password"
+  base_path: "/aircraft"
+
+output:
+  base_directory: "scenario_inspector/output"
+  inspection_folder_prefix: "inspection_"
+  date_format: "%Y-%m-%d"
+  time_format: "%Y%m%d_%H%M%S"
+
+logging:
+  level: "INFO"
+  log_folder_path: "scenario_inspector/logs"
+  log_file_prefix: "scenario_inspector"
+  console: true
+
+security:
+  bcrypt_rounds: 12
+  session_timeout: 3600  # seconds
+
+gui:
+  window_title: "AUAS Scenario Inspector"
+  theme: "default"
+  default_geometry: "1200x800"

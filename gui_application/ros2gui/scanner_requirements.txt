@@ -1,0 +1,15 @@
+# Dependencies for scanCONTROL Scanner Configuration Window
+# 
+# Core GUI and plotting
+PyQt5>=5.15.0
+matplotlib>=3.5.0
+numpy>=1.21.0
+
+# Video recording (for AVI export)
+opencv-python>=4.6.0
+
+# Optional: Advanced data formats
+h5py>=3.7.0  # For HDF5 export
+
+# Note: The scanCONTROL SDK (pylinllt) must be installed separately
+# from the scanCONTROL-Linux-SDK provided by Micro-Epsilon

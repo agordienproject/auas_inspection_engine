@@ -1,0 +1,22 @@
+program:
+  name: "gantry_simple"
+  description: "Simple test for gantry system"
+  piece_info:
+    name_piece: "Landing gear"
+    ref_piece: "0054-0544"
+  
+  stages:
+    - stage: 1
+      name: "gantry"
+      together: false        
+      steps:
+        - step: 1
+          name: "gantry-FG"
+          system: "gantry"
+          action: "load_and_run"
+          program_name: "simpheenenweer.xml"
+        # - step: 2
+        #   name: "gantry-delta"
+        #   system: "gantry"
+        #   action: "load_and_run"
+        #   program_name: "testGantryRG.xml"
