@@ -8,7 +8,7 @@ database:
 systems:
   scanControl:
     connection_type: "tcp"
-    llt_path: "/home/agordien/projects/auas_inspection_engine/scanCONTROL-Linux-SDK-1-0-1/python_bindings"
+    llt_path: "C:\\scanCONTROL-Windows-SDK\\python_bindings"  # Update this path to your Windows SDK location
     ip: "192.168.3.2"
     timeout: 30
     type: "scanner_system"
@@ -17,9 +17,10 @@ systems:
     device_id: "Intel Corp. Intel(R) RealSense(TM) Depth Camera 435i"
     timeout: 15
     type: "camera_system"
+    use_realsense_sdk: true  # Use Intel RealSense SDK instead of ROS2
   table:
     connection_type: "serial"
-    port: "/dev/ttyACM0"
+    port: "COM3"  # Windows COM port - update to your actual port
     baudrate: 9600
     timeout: 10
     type: "rotating_table"
@@ -29,13 +30,13 @@ systems:
     # ip: "192.168.68.126"
     port: 3920
     timeout: 20
-    programs_path: "/home/agordien/projects/auas_inspection_engine/scenario_inspector/src/systems/gantry_programs"
+    programs_path: "C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\gantry_programs"
     type: "gantry_system"
   xarm:
     connection_type: "tcp"
     ip: "192.168.1.222"
     timeout: 30
-    programs_path: "/home/agordien/projects/auas_inspection_engine/scenario_inspector/src/systems/xarm_programs"
+    programs_path: "C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\xarm_programs"
     type: "xarm_system"
 
 ftp:
@@ -45,14 +46,14 @@ ftp:
   base_path: "/aircraft"
 
 output:
-  base_directory: "scenario_inspector/output"
+  base_directory: "scenario_inspector\\output"
   inspection_folder_prefix: "inspection_"
   date_format: "%Y-%m-%d"
   time_format: "%Y%m%d_%H%M%S"
 
 logging:
   level: "INFO"
-  log_folder_path: "scenario_inspector/logs"
+  log_folder_path: "scenario_inspector\\logs"
   log_file_prefix: "scenario_inspector"
   console: true
 
