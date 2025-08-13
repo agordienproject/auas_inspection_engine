@@ -14,6 +14,11 @@ setup(
         'bcrypt>=4.0.0',
         'python-dateutil>=2.8.0',
         'typing-extensions>=4.0.0',
+        'pyrealsense2>=2.50.0',  # Intel RealSense SDK for Windows
+        'pyserial>=3.5',
+        'opencv-python>=4.5.0',
+        'numpy>=1.21.0',
+        'WMI>=1.5.1',  # Windows device management (optional)
     ],
     python_requires='>=3.8',
     entry_points={

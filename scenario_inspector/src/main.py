@@ -11,7 +11,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gui.main_window import InspectionMainWindow
 from config.config_manager import ConfigManager
-from auth.login import LoginDialog
 
 def setup_logging():
     """Setup logging configuration with daily folders and timestamped files"""
@@ -67,22 +66,11 @@ def main():
     app = QApplication(sys.argv)
     
     try:
-        # Show login dialog
-        login_dialog = LoginDialog()
-        if login_dialog.exec_() != LoginDialog.Accepted:
-            logger.info("Login cancelled by user")
-            return 0
+        # Start with guest user (no authentication required)
+        logger.info("Starting application in guest mode (no login required)")
         
-        # Get authenticated user
-        authenticated_user = login_dialog.get_authenticated_user()
-        if not authenticated_user:
-            logger.error("Authentication failed")
-            return 1
-        
-        logger.info(f"User {authenticated_user.pseudo} logged in successfully")
-        
-        # Create and show main window
-        main_window = InspectionMainWindow(authenticated_user)
+        # Create and show main window without authenticated user
+        main_window = InspectionMainWindow()
         main_window.show()
         
         # Start application event loop

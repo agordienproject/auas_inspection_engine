@@ -19,6 +19,7 @@ from PyQt5.QtGui import QFont, QPalette
 from config.config_manager import ConfigManager
 from database.models import User
 from systems.system_manager import SystemManager
+from auth.login import LoginDialog
 
 
 class ProgramExecutionThread(QThread):
@@ -175,9 +176,9 @@ class ProgramExecutionThread(QThread):
 class InspectionMainWindow(QMainWindow):
     """Main window for the AUAS Inspection Engine"""
     
-    def __init__(self, user: User):
+    def __init__(self, user: User = None):
         super().__init__()
-        self.user = user
+        self.user = user  # Can be None for guest mode
         self.config_manager = ConfigManager()
         self.system_manager = SystemManager(self.config_manager)
         self.logger = logging.getLogger(__name__)
@@ -216,7 +217,10 @@ class InspectionMainWindow(QMainWindow):
         self.create_status_tab()
         
         # Status bar
-        self.statusBar().showMessage(f"Logged in as: {self.user.pseudo}")
+        if self.user:
+            self.statusBar().showMessage(f"Logged in as: {self.user.pseudo}")
+        else:
+            self.statusBar().showMessage("Guest mode - Login to access database features")
         
     def create_header(self, layout):
         """Create the header section"""
@@ -237,14 +241,26 @@ class InspectionMainWindow(QMainWindow):
         # Spacer
         header_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
         
-        # User info
-        user_label = QLabel(f"User: {self.user.pseudo}")
-        header_layout.addWidget(user_label)
-        
-        # Logout button
-        logout_btn = QPushButton("Logout")
-        logout_btn.clicked.connect(self.logout)
-        header_layout.addWidget(logout_btn)
+        # User info and login/logout
+        if self.user:
+            # User is logged in
+            user_label = QLabel(f"User: {self.user.pseudo}")
+            header_layout.addWidget(user_label)
+            
+            # Logout button
+            logout_btn = QPushButton("Logout")
+            logout_btn.clicked.connect(self.logout)
+            header_layout.addWidget(logout_btn)
+        else:
+            # Guest mode
+            guest_label = QLabel("Guest Mode")
+            guest_label.setStyleSheet("color: orange; font-weight: bold;")
+            header_layout.addWidget(guest_label)
+            
+            # Login button
+            login_btn = QPushButton("Login")
+            login_btn.clicked.connect(self.show_login)
+            header_layout.addWidget(login_btn)
         
         layout.addWidget(header_frame)
         
@@ -316,6 +332,16 @@ class InspectionMainWindow(QMainWindow):
         """Create the execution control tab"""
         exec_widget = QWidget()
         layout = QVBoxLayout(exec_widget)
+        
+        # Database status indicator
+        self.db_status_group = QGroupBox("Database Status")
+        db_status_layout = QHBoxLayout(self.db_status_group)
+        
+        self.db_status_label = QLabel()
+        self.update_database_status_display()
+        db_status_layout.addWidget(self.db_status_label)
+        
+        layout.addWidget(self.db_status_group)
         
         # Execution controls
         controls_group = QGroupBox("Execution Controls")
@@ -746,7 +772,25 @@ class InspectionMainWindow(QMainWindow):
         if not self.current_program or not self.piece_info:
             QMessageBox.warning(self, "Warning", "Please select a program and fill piece information.")
             return
+        
+        # Warn guest users about limited functionality
+        if not self.user:
+            reply = QMessageBox.question(
+                self, 
+                "Guest Mode", 
+                "You are running in guest mode. Inspection data will not be saved to the database.\n\n"
+                "Would you like to:\n"
+                "• Continue in guest mode (local execution only)\n"
+                "• Login first to enable database logging\n\n"
+                "Continue without login?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
             
+            if reply == QMessageBox.No:
+                self.show_login()
+                return
+                
         # Disable start button, enable stop button
         self.start_execution_btn.setEnabled(False)
         self.stop_execution_btn.setEnabled(True)
@@ -754,6 +798,12 @@ class InspectionMainWindow(QMainWindow):
         # Clear progress
         self.progress_text.clear()
         self.progress_bar.setValue(0)
+        
+        # Add status message about database logging
+        if self.user:
+            self.update_progress(f"🔐 Authenticated user: {self.user.pseudo} - Database logging enabled")
+        else:
+            self.update_progress("⚠️ Guest mode: Inspection data will not be saved to database")
         
         # Start execution thread
         self.execution_thread = ProgramExecutionThread(
@@ -805,18 +855,92 @@ class InspectionMainWindow(QMainWindow):
         else:
             self.update_progress("✗ Program execution failed or was stopped.")
             
+    def show_login(self):
+        """Show login dialog and authenticate user"""
+        try:
+            login_dialog = LoginDialog()
+            if login_dialog.exec_() == LoginDialog.Accepted:
+                # Get authenticated user
+                authenticated_user = login_dialog.get_authenticated_user()
+                if authenticated_user:
+                    self.user = authenticated_user
+                    self.logger.info(f"User {authenticated_user.pseudo} logged in successfully")
+                    
+                    # Update UI to reflect logged in state
+                    self.update_ui_after_login()
+                    
+                    # Update status bar
+                    self.statusBar().showMessage(f"Logged in as: {self.user.pseudo}")
+                else:
+                    QMessageBox.warning(self, "Login Failed", "Authentication failed. Please try again.")
+        except Exception as e:
+            self.logger.error(f"Login error: {e}")
+            QMessageBox.critical(self, "Login Error", f"An error occurred during login: {str(e)}")
+    
     def logout(self):
-        """Logout and close the application"""
-        reply = QMessageBox.question(
-            self, 
-            "Logout", 
-            "Are you sure you want to logout?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
+        """Logout user and switch to guest mode"""
+        if self.user:
+            reply = QMessageBox.question(
+                self, 
+                "Logout", 
+                f"Are you sure you want to logout user '{self.user.pseudo}'?\nYou will switch to guest mode.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                self.user = None
+                self.logger.info("User logged out, switched to guest mode")
+                
+                # Update UI to reflect guest mode
+                self.update_ui_after_logout()
+                
+                # Update status bar
+                self.statusBar().showMessage("Guest mode - Login to access database features")
+        else:
+            # If no user is logged in, offer to close application
+            reply = QMessageBox.question(
+                self, 
+                "Close Application", 
+                "Close the application?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                self.close()
+    
+    def update_database_status_display(self):
+        """Update the database status display"""
+        if hasattr(self, 'db_status_label'):
+            if self.user:
+                self.db_status_label.setText(f"🔐 Logged in as: {self.user.pseudo} | Database logging: ENABLED")
+                self.db_status_label.setStyleSheet("color: green; font-weight: bold;")
+            else:
+                self.db_status_label.setText("⚠️ Guest Mode | Database logging: DISABLED")
+                self.db_status_label.setStyleSheet("color: orange; font-weight: bold;")
+    
+    def update_ui_after_login(self):
+        """Update UI elements after successful login"""
+        # Update database status display
+        self.update_database_status_display()
         
-        if reply == QMessageBox.Yes:
-            self.close()
+        # Recreate header to show logged in state
+        self.setup_ui()
+        
+        # You can add more UI updates here if needed
+        # For example, enable database-related features
+        
+    def update_ui_after_logout(self):
+        """Update UI elements after logout"""
+        # Update database status display
+        self.update_database_status_display()
+        
+        # Recreate header to show guest mode
+        self.setup_ui()
+        
+        # You can add more UI updates here if needed
+        # For example, disable database-related features
             
     def closeEvent(self, event):
         """Handle window close event"""
