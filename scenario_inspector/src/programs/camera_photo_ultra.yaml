@@ -1,0 +1,19 @@
+program:
+  name: "camera_photo_ultra"
+  description: "Ultra quality photo - frame averaging + denoising + sharpening + max quality"
+  
+  stages:
+    - stage: 1
+      name: "camera_photo_ultra"
+      together: false    
+      steps:
+        - step: 1
+          name: "camera_ultra"
+          system: "camera"
+          action: "capture_image"
+          saving_file: true
+          parameters:
+            filename: "ultra_quality_photo.png"
+            compression: 0  # No compression for PNG
+            enhance_quality: true  # Apply all enhancements
+            denoise: true  # Apply advanced denoising

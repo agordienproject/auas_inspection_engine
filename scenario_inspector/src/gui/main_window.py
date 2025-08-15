@@ -1237,23 +1237,17 @@ class InspectionMainWindow(QMainWindow):
             QMessageBox.warning(self, "Warning", "Please select a program and fill piece information.")
             return
         
-        # Warn guest users about limited functionality
+        # Inform guest users about limited functionality (but don't block)
         if not self.user:
-            reply = QMessageBox.question(
+            QMessageBox.information(
                 self, 
                 "Guest Mode", 
-                "You are running in guest mode. Inspection data will not be saved to the database.\n\n"
-                "Would you like to:\n"
-                "• Continue in guest mode (local execution only)\n"
-                "• Login first to enable database logging\n\n"
-                "Continue without login?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                "You are running in guest mode.\n\n"
+                "• Inspection will execute normally\n"
+                "• Data will be saved locally in output folder\n"
+                "• Results will NOT be saved to database\n\n"
+                "Login anytime to enable database logging."
             )
-            
-            if reply == QMessageBox.No:
-                self.show_login()
-                return
                 
         # Disable start button, enable stop button
         self.start_execution_btn.setEnabled(False)
@@ -1389,22 +1383,86 @@ class InspectionMainWindow(QMainWindow):
         # Update database status display
         self.update_database_status_display()
         
-        # Recreate header to show logged in state
-        self.setup_ui()
+        # Update header to show logged in state
+        self.update_header()
         
-        # You can add more UI updates here if needed
-        # For example, enable database-related features
+        # Update status bar
+        self.statusBar().showMessage(f"Logged in as: {self.user.pseudo}")
+        
+        # Update execution button state
+        self.update_execution_button_state()
         
     def update_ui_after_logout(self):
         """Update UI elements after logout"""
         # Update database status display
         self.update_database_status_display()
         
-        # Recreate header to show guest mode
-        self.setup_ui()
+        # Update header to show guest mode
+        self.update_header()
         
-        # You can add more UI updates here if needed
-        # For example, disable database-related features
+        # Update status bar
+        self.statusBar().showMessage("Guest mode - Login to access database features")
+        
+        # Update execution button state
+        self.update_execution_button_state()
+    
+    def update_header(self):
+        """Update just the header section without recreating entire UI"""
+        # Find and remove the existing header frame
+        main_layout = self.centralWidget().layout()
+        header_frame = None
+        
+        for i in range(main_layout.count()):
+            item = main_layout.itemAt(i)
+            if item.widget() and isinstance(item.widget(), QFrame):
+                # This is likely our header frame (first QFrame in layout)
+                header_frame = item.widget()
+                break
+        
+        if header_frame:
+            header_frame.setParent(None)
+        
+        # Create new header and insert at position 0
+        new_header_frame = QFrame()
+        new_header_frame.setFrameStyle(QFrame.StyledPanel)
+        new_header_frame.setMaximumHeight(80)
+        
+        header_layout = QHBoxLayout(new_header_frame)
+        
+        # Title
+        title_label = QLabel("AUAS Inspection Engine")
+        title_font = QFont()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        header_layout.addWidget(title_label)
+        
+        # Spacer
+        header_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
+        
+        # User info and login/logout
+        if self.user:
+            # User is logged in
+            user_label = QLabel(f"User: {self.user.pseudo}")
+            header_layout.addWidget(user_label)
+            
+            # Logout button
+            logout_btn = QPushButton("Logout")
+            logout_btn.clicked.connect(self.logout)
+            header_layout.addWidget(logout_btn)
+        else:
+            # Guest mode
+            guest_label = QLabel("Guest Mode")
+            guest_label.setStyleSheet("color: orange; font-weight: bold;")
+            header_layout.addWidget(guest_label)
+            
+            # Login button
+            login_btn = QPushButton("Login")
+            login_btn.clicked.connect(self.show_login)
+            header_layout.addWidget(login_btn)
+        
+        # Insert new header at the top
+        main_layout.insertWidget(0, new_header_frame)
             
     def closeEvent(self, event):
         """Handle window close event"""

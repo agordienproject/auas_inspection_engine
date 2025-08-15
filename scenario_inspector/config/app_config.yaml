@@ -19,6 +19,7 @@ systems:
     timeout: 15
     type: "camera_system"
     use_realsense_sdk: true  # Use Intel RealSense SDK instead of ROS2
+    resolution: "ultra"  # Options: "standard" (640x480), "medium" (848x480), "high" (1280x720), "ultra" (1920x1080)
   table:
     connection_type: "serial"
     port: "COM3"  # Windows COM port - update to your actual port

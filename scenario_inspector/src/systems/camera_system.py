@@ -33,7 +33,16 @@ class RealSenseCameraController:
         self.current_depth_frame = None
         self.logger = logging.getLogger(__name__)
         
-    def connect(self, device_id: str = "Intel Corp"):
+        # Video recording variables
+        self.is_recording = False
+        self.video_writer = None
+        self.video_filename = None
+        self.video_fps = 30
+        self.video_quality = "medium"
+        self.video_duration = None
+        self.video_start_time = None
+        
+    def connect(self, device_id: str = "Intel Corp", resolution: str = "high"):
         """Connect to Intel RealSense camera"""
         try:
             self.device_id = device_id
@@ -46,9 +55,23 @@ class RealSenseCameraController:
             self.pipeline = rs.pipeline()
             self.config = rs.config()
             
-            # Configure streams
-            self.config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-            self.config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+            # Configure streams based on resolution setting
+            if resolution == "ultra":
+                # Ultra high resolution - 1920x1080
+                self.config.enable_stream(rs.stream.color, 1920, 1080, rs.format.bgr8, 30)
+                self.config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
+            elif resolution == "high":
+                # High resolution - 1280x720
+                self.config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
+                self.config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
+            elif resolution == "medium":
+                # Medium resolution - 848x480
+                self.config.enable_stream(rs.stream.color, 848, 480, rs.format.bgr8, 30)
+                self.config.enable_stream(rs.stream.depth, 848, 480, rs.format.z16, 30)
+            else:
+                # Standard resolution - 640x480
+                self.config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+                self.config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
             
             # Test camera availability
             ctx = rs.context()
@@ -60,6 +83,29 @@ class RealSenseCameraController:
             
             # Start streaming
             profile = self.pipeline.start(self.config)
+            
+            # Configure camera settings for better quality
+            try:
+                # Get the color sensor
+                color_sensor = profile.get_device().first_color_sensor()
+                
+                # Enable auto-exposure initially
+                color_sensor.set_option(rs.option.enable_auto_exposure, 1)
+                
+                # Set high gain for better low-light performance
+                if color_sensor.supports(rs.option.gain):
+                    color_sensor.set_option(rs.option.gain, 32)  # Adjust as needed
+                
+                # Set manual white balance for more consistent colors
+                if color_sensor.supports(rs.option.enable_auto_white_balance):
+                    color_sensor.set_option(rs.option.enable_auto_white_balance, 0)
+                    if color_sensor.supports(rs.option.white_balance):
+                        color_sensor.set_option(rs.option.white_balance, 4600)  # Daylight temperature
+                
+                self.logger.info("Applied camera quality settings")
+            except Exception as e:
+                self.logger.warning(f"Could not set camera quality settings: {e}")
+            
             self.connected = True
             self.logger.info(f"Successfully connected to RealSense camera: {devices[0].get_info(rs.camera_info.name)}")
             return True
@@ -68,17 +114,32 @@ class RealSenseCameraController:
             self.logger.error(f"Failed to connect to RealSense camera: {e}")
             return self._connect_opencv()
     
-    def _connect_opencv(self):
+    def _connect_opencv(self, resolution: str = "high"):
         """Fallback connection using OpenCV"""
         try:
             # Try to find any available camera
             for i in range(5):  # Check first 5 camera indices
                 cap = cv2.VideoCapture(i)
                 if cap.isOpened():
+                    # Set resolution based on setting
+                    if resolution == "ultra":
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                    elif resolution == "high":
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                    elif resolution == "medium":
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 848)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                    else:
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                    
                     cap.release()
                     self.connected = True
                     self.camera_index = i
-                    self.logger.info(f"Connected to camera using OpenCV (index {i})")
+                    self.camera_resolution = resolution
+                    self.logger.info(f"Connected to camera using OpenCV (index {i}, resolution: {resolution})")
                     return True
             
             self.logger.error("No cameras found using OpenCV")
@@ -127,8 +188,28 @@ class RealSenseCameraController:
         try:
             self.cap = cv2.VideoCapture(getattr(self, 'camera_index', 0))
             if self.cap.isOpened():
+                # Apply resolution settings
+                resolution = getattr(self, 'camera_resolution', 'high')
+                if resolution == "ultra":
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                elif resolution == "high":
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                elif resolution == "medium":
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 848)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                else:
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                
+                # Set additional quality settings
+                self.cap.set(cv2.CAP_PROP_FPS, 30)
+                
                 self.capturing = True
-                self.logger.info("OpenCV camera streaming started")
+                actual_width = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                actual_height = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                self.logger.info(f"OpenCV camera streaming started - Resolution: {actual_width}x{actual_height}")
                 return True
             return False
         except Exception as e:
@@ -148,45 +229,105 @@ class RealSenseCameraController:
             self.logger.error(f"Error stopping camera: {e}")
             return False
     
-    def capture_image(self, filename: str = None):
-        """Capture a single image"""
+    def capture_image(self, filename: str = None, enhance_quality: bool = False, denoise: bool = False):
+        """Capture a single image with optional quality enhancements"""
         if not self.capturing:
             raise RuntimeError("Camera not capturing")
         
         try:
             if REALSENSE_AVAILABLE and self.pipeline:
-                # Capture using RealSense
-                frames = self.pipeline.wait_for_frames()
-                color_frame = frames.get_color_frame()
+                # Capture multiple frames and average them for better quality
+                frames_to_average = 3 if enhance_quality else 1
+                images = []
                 
-                if not color_frame:
-                    raise RuntimeError("Failed to capture color frame")
+                for _ in range(frames_to_average):
+                    frames = self.pipeline.wait_for_frames()
+                    color_frame = frames.get_color_frame()
+                    
+                    if not color_frame:
+                        raise RuntimeError("Failed to capture color frame")
+                    
+                    # Convert to numpy array
+                    color_image = np.asanyarray(color_frame.get_data())
+                    images.append(color_image)
+                    
+                    if frames_to_average > 1:
+                        time.sleep(0.1)  # Small delay between captures
                 
-                # Convert to numpy array
-                color_image = np.asanyarray(color_frame.get_data())
+                # Average multiple frames to reduce noise
+                if len(images) > 1:
+                    color_image = np.mean(images, axis=0).astype(np.uint8)
+                    self.logger.info(f"Averaged {len(images)} frames for noise reduction")
+                else:
+                    color_image = images[0]
                 
-                if filename:
-                    cv2.imwrite(filename, color_image)
-                    self.logger.info(f"Image saved to {filename}")
-                
-                return color_image
             else:
-                # Use OpenCV fallback
+                # Use OpenCV fallback with frame averaging
                 if hasattr(self, 'cap'):
-                    ret, frame = self.cap.read()
-                    if ret:
-                        if filename:
-                            cv2.imwrite(filename, frame)
-                            self.logger.info(f"Image saved to {filename}")
-                        return frame
-                    else:
+                    frames_to_average = 3 if enhance_quality else 1
+                    images = []
+                    
+                    for _ in range(frames_to_average):
+                        ret, frame = self.cap.read()
+                        if ret:
+                            images.append(frame)
+                            if frames_to_average > 1:
+                                time.sleep(0.1)
+                    
+                    if not images:
                         raise RuntimeError("Failed to capture frame")
+                    
+                    # Average frames if multiple captured
+                    if len(images) > 1:
+                        color_image = np.mean(images, axis=0).astype(np.uint8)
+                    else:
+                        color_image = images[0]
                 else:
                     raise RuntimeError("Camera not initialized")
+            
+            # Apply image enhancements if requested
+            if enhance_quality or denoise:
+                color_image = self._enhance_image_quality(color_image, denoise)
+            
+            if filename:
+                cv2.imwrite(filename, color_image)
+                self.logger.info(f"Image saved to {filename}")
+            
+            return color_image
                     
         except Exception as e:
             self.logger.error(f"Failed to capture image: {e}")
             raise
+    
+    def _enhance_image_quality(self, image, denoise=False):
+        """Apply image quality enhancements"""
+        try:
+            enhanced_image = image.copy()
+            
+            # Apply denoising if requested
+            if denoise:
+                # Non-local means denoising for color images
+                enhanced_image = cv2.fastNlMeansDenoisingColored(enhanced_image, None, 10, 10, 7, 21)
+                self.logger.info("Applied denoising filter")
+            
+            # Enhance sharpness using unsharp masking
+            gaussian = cv2.GaussianBlur(enhanced_image, (0, 0), 2.0)
+            enhanced_image = cv2.addWeighted(enhanced_image, 1.5, gaussian, -0.5, 0)
+            
+            # Enhance contrast using CLAHE (Contrast Limited Adaptive Histogram Equalization)
+            lab = cv2.cvtColor(enhanced_image, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            l = clahe.apply(l)
+            enhanced_image = cv2.merge([l, a, b])
+            enhanced_image = cv2.cvtColor(enhanced_image, cv2.COLOR_LAB2BGR)
+            
+            self.logger.info("Applied image quality enhancements (sharpening + contrast)")
+            return enhanced_image
+            
+        except Exception as e:
+            self.logger.error(f"Failed to enhance image quality: {e}")
+            return image
     
     def capture_depth_image(self, filename: str = None):
         """Capture depth image (only available with RealSense)"""
@@ -217,6 +358,139 @@ class RealSenseCameraController:
             self.logger.error(f"Failed to capture depth image: {e}")
             raise
     
+    def start_video_recording(self, filename: str, fps: int = 30, quality: str = "high", 
+                            codec: str = "mp4v", duration: float = None):
+        """Start video recording with specified quality and FPS"""
+        if not self.capturing:
+            raise RuntimeError("Camera not capturing")
+        
+        try:
+            # Determine resolution based on current camera setup
+            if REALSENSE_AVAILABLE and self.pipeline:
+                # For RealSense, we need to get the actual stream resolution
+                frames = self.pipeline.wait_for_frames()
+                color_frame = frames.get_color_frame()
+                if color_frame:
+                    width = color_frame.get_width()
+                    height = color_frame.get_height()
+                else:
+                    width, height = 1920, 1080  # Default ultra resolution
+            else:
+                # For OpenCV, get from camera properties
+                if hasattr(self, 'cap'):
+                    width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                else:
+                    width, height = 1920, 1080  # Default
+            
+            # Define codec options
+            codec_options = {
+                'mp4v': cv2.VideoWriter_fourcc(*'mp4v'),  # Good quality, widely supported
+                'xvid': cv2.VideoWriter_fourcc(*'XVID'),  # High compression
+                'h264': cv2.VideoWriter_fourcc(*'H264'),  # Modern codec, best quality
+                'mjpg': cv2.VideoWriter_fourcc(*'MJPG'),  # Motion JPEG, good for high fps
+            }
+            
+            fourcc = codec_options.get(codec.lower(), cv2.VideoWriter_fourcc(*'mp4v'))
+            
+            # Create VideoWriter
+            self.video_writer = cv2.VideoWriter(filename, fourcc, fps, (width, height))
+            
+            if not self.video_writer.isOpened():
+                raise RuntimeError(f"Failed to open video writer for {filename}")
+            
+            self.video_filename = filename
+            self.video_fps = fps
+            self.video_quality = quality
+            self.video_duration = duration
+            self.video_start_time = time.time()
+            self.is_recording = True
+            
+            self.logger.info(f"Started video recording: {filename} ({width}x{height} @ {fps}fps, {quality} quality)")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to start video recording: {e}")
+            return False
+    
+    def record_video_frame(self):
+        """Record a single frame to the video file"""
+        if not self.is_recording or not hasattr(self, 'video_writer'):
+            return False
+        
+        try:
+            # Check duration limit
+            if self.video_duration and (time.time() - self.video_start_time) >= self.video_duration:
+                self.stop_video_recording()
+                return False
+            
+            # Capture frame
+            if REALSENSE_AVAILABLE and self.pipeline:
+                frames = self.pipeline.wait_for_frames()
+                color_frame = frames.get_color_frame()
+                
+                if not color_frame:
+                    return False
+                
+                frame = np.asanyarray(color_frame.get_data())
+                
+            else:
+                # OpenCV fallback
+                if hasattr(self, 'cap'):
+                    ret, frame = self.cap.read()
+                    if not ret:
+                        return False
+                else:
+                    return False
+            
+            # Apply quality enhancements if high quality is requested
+            if self.video_quality == "high" or self.video_quality == "ultra":
+                frame = self._enhance_video_frame(frame)
+            
+            # Write frame to video
+            self.video_writer.write(frame)
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to record video frame: {e}")
+            return False
+    
+    def stop_video_recording(self):
+        """Stop video recording"""
+        try:
+            if hasattr(self, 'video_writer') and self.video_writer:
+                self.video_writer.release()
+                delattr(self, 'video_writer')
+            
+            self.is_recording = False
+            duration = time.time() - getattr(self, 'video_start_time', time.time())
+            
+            self.logger.info(f"Video recording stopped. Duration: {duration:.1f}s")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error stopping video recording: {e}")
+            return False
+    
+    def _enhance_video_frame(self, frame):
+        """Apply lightweight enhancements to video frames (faster than photo enhancements)"""
+        try:
+            # For video, we apply lighter processing to maintain real-time performance
+            enhanced_frame = frame.copy()
+            
+            # Light sharpening
+            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+            enhanced_frame = cv2.filter2D(enhanced_frame, -1, kernel)
+            
+            # Slight contrast enhancement
+            enhanced_frame = cv2.convertScaleAbs(enhanced_frame, alpha=1.1, beta=5)
+            
+            return enhanced_frame
+            
+        except Exception as e:
+            self.logger.error(f"Failed to enhance video frame: {e}")
+            return frame
+    
     def get_camera_info(self):
         """Get camera information"""
         if REALSENSE_AVAILABLE and self.pipeline:
@@ -244,57 +518,85 @@ class RealSenseCameraController:
 class CameraSystem(BaseSystem):
     """Camera system for capturing images and depth data"""
     
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
+    def __init__(self, name: str, config: Dict[str, Any]):
+        super().__init__(name, config)
         self.controller = RealSenseCameraController()
         self.logger = logging.getLogger(__name__)
-        self.current_inspection_folder = None  # Will be set by system manager
+        self.connected = False
+        
+    def initialize(self) -> bool:
+        """Initialize the camera system"""
+        try:
+            device_id = self.config.get('device_id', 'Intel Corp')
+            resolution = self.config.get('resolution', 'high')  # Default to high quality
+            success = self.controller.connect(device_id, resolution)
+            if success:
+                self.connected = True
+                self.is_initialized = True
+                self.logger.info(f"Camera system initialized successfully with {resolution} resolution")
+            return success
+        except Exception as e:
+            self.logger.error(f"Failed to initialize camera: {e}")
+            self.connected = False
+            self.is_initialized = False
+            return False
+    
+    def execute_step(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a camera step with given configuration"""
+        if not self.is_initialized:
+            return {"success": False, "error": "Camera system not initialized"}
+        
+        try:
+            action = step_config.get('action', 'capture_image')
+            parameters = step_config.get('parameters', {})
+            
+            return self.execute_action(action, parameters)
+            
+        except Exception as e:
+            self.logger.error(f"Camera step execution failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def test_connection(self) -> Dict[str, Any]:
+        """Test camera connection"""
+        try:
+            if not self.connected:
+                # Try to initialize if not connected
+                if not self.initialize():
+                    return {
+                        "status": "not_available",
+                        "message": "Failed to connect to camera",
+                        "details": {"device_id": self.config.get('device_id', 'Unknown')}
+                    }
+            
+            # Try to start and immediately stop camera to test
+            if self.controller.start_camera():
+                self.controller.stop_camera()
+                camera_info = self.controller.get_camera_info()
+                return {
+                    "status": "available",
+                    "message": "Camera connection successful",
+                    "details": camera_info
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": "Camera connected but failed to start streaming",
+                    "details": {}
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Camera connection test failed: {e}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "details": {}
+            }
         
     def set_inspection_folder(self, folder_path: str):
         """Set the current inspection folder path for output"""
         self.current_inspection_folder = folder_path
         self.logger.info(f"Camera system inspection folder set to: {folder_path}")
         
-    def connect(self) -> bool:
-        """Connect to camera system"""
-        try:
-            device_id = self.config.get('device_id', 'Intel Corp')
-            success = self.controller.connect(device_id)
-            if success:
-                self.connected = True
-                self.logger.info("Camera system connected successfully")
-            return success
-        except Exception as e:
-            self.logger.error(f"Failed to connect to camera: {e}")
-            self.connected = False
-            return False
-    
-    def disconnect(self) -> bool:
-        """Disconnect from camera system"""
-        try:
-            success = self.controller.disconnect()
-            self.connected = False
-            self.logger.info("Camera system disconnected")
-            return success
-        except Exception as e:
-            self.logger.error(f"Error disconnecting camera: {e}")
-            return False
-    
-    def test_connection(self) -> bool:
-        """Test camera connection"""
-        if not self.connected:
-            return False
-        
-        try:
-            # Try to start and immediately stop camera
-            if self.controller.start_camera():
-                self.controller.stop_camera()
-                return True
-            return False
-        except Exception as e:
-            self.logger.error(f"Camera connection test failed: {e}")
-            return False
-    
     def execute_action(self, action: str, parameters: Dict[str, Any] = None) -> Dict[str, Any]:
         """Execute camera action"""
         if parameters is None:
@@ -309,6 +611,14 @@ class CameraSystem(BaseSystem):
                 return self._start_stream(parameters)
             elif action == "stop_stream":
                 return self._stop_stream(parameters)
+            elif action == "record_video":
+                return self._record_video(parameters)
+            elif action == "start_video_recording":
+                return self._start_video_recording(parameters)
+            elif action == "stop_video_recording":
+                return self._stop_video_recording(parameters)
+            elif action == "take_video":  # Legacy support
+                return self._record_video(parameters)
             elif action == "get_info":
                 return self._get_camera_info()
             else:
@@ -340,14 +650,38 @@ class CameraSystem(BaseSystem):
             if output_dir and not os.path.exists(output_dir):
                 os.makedirs(output_dir, exist_ok=True)
             
-            # Capture image
-            image = self.controller.capture_image(filename)
+            # Get enhancement settings
+            enhance_quality = parameters.get('enhance_quality', False)
+            denoise = parameters.get('denoise', False)
+            
+            # Capture image with optional enhancements
+            image = self.controller.capture_image(filename=None, enhance_quality=enhance_quality, denoise=denoise)
+            
+            # Apply additional image quality settings if specified
+            quality = parameters.get('quality', 95)  # JPEG quality (0-100)
+            
+            if filename.lower().endswith('.jpg') or filename.lower().endswith('.jpeg'):
+                # Save with specified quality
+                cv2.imwrite(filename, image, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            elif filename.lower().endswith('.png'):
+                # PNG compression level (0-9, where 9 is best compression)
+                compression = parameters.get('compression', 1)  # Low compression for better quality
+                cv2.imwrite(filename, image, [cv2.IMWRITE_PNG_COMPRESSION, compression])
+            else:
+                # Default save
+                cv2.imwrite(filename, image)
+            
+            # Calculate file size for reporting
+            file_size = os.path.getsize(filename) if os.path.exists(filename) else 0
             
             return {
                 "success": True,
                 "filename": filename,
                 "image_shape": image.shape if image is not None else None,
-                "message": f"Image captured successfully: {filename}"
+                "quality": quality,
+                "file_size_mb": round(file_size / (1024*1024), 2),
+                "enhanced": enhance_quality or denoise,
+                "message": f"{'Enhanced ' if enhance_quality or denoise else ''}high quality image captured successfully: {filename}"
             }
             
         except Exception as e:
@@ -417,6 +751,137 @@ class CameraSystem(BaseSystem):
             return {
                 "success": True,
                 "camera_info": info
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def _record_video(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Record a video with specified duration, FPS, and quality"""
+        try:
+            # Start camera if not already streaming
+            if not self.controller.capturing:
+                self.controller.start_camera()
+            
+            # Get parameters
+            duration = parameters.get('duration', parameters.get('record_time', 10))  # Support both names
+            fps = parameters.get('fps', 30)
+            quality = parameters.get('quality', 'medium')  # low, medium, high, ultra
+            codec = parameters.get('codec', 'mp4v')  # mp4v, h264, xvid, mjpg
+            
+            # Generate filename if not provided
+            filename = parameters.get('filename')
+            if not filename:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"camera_video_{timestamp}.mp4"
+            
+            # Use current inspection folder if available
+            if self.current_inspection_folder and not os.path.isabs(filename):
+                filename = os.path.join(self.current_inspection_folder, filename)
+            
+            # Ensure output directory exists
+            output_dir = os.path.dirname(filename)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Start video recording
+            success = self.controller.start_video_recording(filename, fps, quality, codec, duration)
+            
+            if not success:
+                return {"success": False, "error": "Failed to start video recording"}
+            
+            # Record frames for the specified duration
+            start_time = time.time()
+            frames_recorded = 0
+            target_frame_time = 1.0 / fps
+            
+            self.logger.info(f"Recording video for {duration} seconds at {fps} FPS...")
+            
+            while (time.time() - start_time) < duration:
+                frame_start = time.time()
+                
+                if self.controller.record_video_frame():
+                    frames_recorded += 1
+                else:
+                    break
+                
+                # Control frame rate
+                elapsed = time.time() - frame_start
+                if elapsed < target_frame_time:
+                    time.sleep(target_frame_time - elapsed)
+            
+            # Stop recording
+            self.controller.stop_video_recording()
+            
+            # Calculate file size
+            file_size = os.path.getsize(filename) if os.path.exists(filename) else 0
+            actual_duration = time.time() - start_time
+            actual_fps = frames_recorded / actual_duration if actual_duration > 0 else 0
+            
+            return {
+                "success": True,
+                "filename": filename,
+                "duration": round(actual_duration, 2),
+                "fps_requested": fps,
+                "fps_actual": round(actual_fps, 1),
+                "frames_recorded": frames_recorded,
+                "quality": quality,
+                "codec": codec,
+                "file_size_mb": round(file_size / (1024*1024), 2),
+                "message": f"Video recorded successfully: {filename} ({actual_duration:.1f}s @ {actual_fps:.1f}fps)"
+            }
+            
+        except Exception as e:
+            # Ensure video recording is stopped on error
+            if hasattr(self.controller, 'is_recording') and self.controller.is_recording:
+                self.controller.stop_video_recording()
+            return {"success": False, "error": str(e)}
+    
+    def _start_video_recording(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Start video recording (for manual control)"""
+        try:
+            # Start camera if not already streaming
+            if not self.controller.capturing:
+                self.controller.start_camera()
+            
+            # Get parameters
+            fps = parameters.get('fps', 30)
+            quality = parameters.get('quality', 'medium')
+            codec = parameters.get('codec', 'mp4v')
+            
+            # Generate filename if not provided
+            filename = parameters.get('filename')
+            if not filename:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"camera_video_{timestamp}.mp4"
+            
+            # Use current inspection folder if available
+            if self.current_inspection_folder and not os.path.isabs(filename):
+                filename = os.path.join(self.current_inspection_folder, filename)
+            
+            # Ensure output directory exists
+            output_dir = os.path.dirname(filename)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Start video recording
+            success = self.controller.start_video_recording(filename, fps, quality, codec)
+            
+            return {
+                "success": success,
+                "filename": filename if success else None,
+                "message": f"Video recording {'started' if success else 'failed'}: {filename}"
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def _stop_video_recording(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Stop video recording (for manual control)"""
+        try:
+            success = self.controller.stop_video_recording()
+            return {
+                "success": success,
+                "message": "Video recording stopped" if success else "Failed to stop video recording"
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
