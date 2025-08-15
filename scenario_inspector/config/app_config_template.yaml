@@ -1,0 +1,68 @@
+database:
+  # host: "145.109.213.243"
+  host: "127.0.0.1" # Localhost for testing
+  port: 5433
+  username: "postgres"
+  password: "admin"
+  database: "lab_inspection"
+
+systems:
+  scanControl:
+    connection_type: "tcp"
+    llt_path: "C:\\scanCONTROL-Windows-SDK\\python_bindings"  # Update this path to your Windows SDK location
+    ip: "192.168.3.2"
+    timeout: 30
+    type: "scanner_system"
+  camera:
+    connection_type: "usb"
+    device_id: "Intel Corp. Intel(R) RealSense(TM) Depth Camera 435i"
+    timeout: 15
+    type: "camera_system"
+    use_realsense_sdk: true  # Use Intel RealSense SDK instead of ROS2
+  table:
+    connection_type: "serial"
+    port: "COM3"  # Windows COM port - update to your actual port
+    baudrate: 9600
+    timeout: 10
+    type: "rotating_table"
+  gantry:
+    connection_type: "tcp"
+    # ip: "192.168.3.11"
+    ip: "127.0.0.1"
+    port: 3921
+    timeout: 20
+    programs_path: "C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\gantry_programs"
+    type: "gantry_system"
+  xarm:
+    connection_type: "tcp"
+    ip: "192.168.1.222"
+    timeout: 30
+    programs_path: "C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\xarm_programs"
+    type: "xarm_system"
+
+ftp:
+  server: "ftp://inspection-server"
+  username: "ftp_user"
+  password: "ftp_password"
+  base_path: "/aircraft"
+
+output:
+  base_directory: "scenario_inspector\\output"
+  inspection_folder_prefix: "inspection_"
+  date_format: "%Y-%m-%d"
+  time_format: "%Y%m%d_%H%M%S"
+
+logging:
+  level: "INFO"
+  log_folder_path: "scenario_inspector\\logs"
+  log_file_prefix: "scenario_inspector"
+  console: true
+
+security:
+  bcrypt_rounds: 12
+  session_timeout: 3600  # seconds
+
+gui:
+  window_title: "AUAS Scenario Inspector"
+  theme: "default"
+  default_geometry: "1200x800"

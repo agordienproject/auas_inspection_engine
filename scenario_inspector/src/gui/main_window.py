@@ -12,7 +12,8 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QPushButton, QComboBox, QTextEdit, QProgressBar,
                              QGroupBox, QGridLayout, QMessageBox, QFileDialog, 
                              QLineEdit, QListWidget, QTabWidget, QFrame, QSpacerItem,
-                             QSizePolicy, QFormLayout)
+                             QSizePolicy, QFormLayout, QScrollArea, QSpinBox, QCheckBox,
+                             QApplication)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QPalette
 
@@ -215,6 +216,7 @@ class InspectionMainWindow(QMainWindow):
         self.create_program_tab()
         self.create_execution_tab()
         self.create_status_tab()
+        self.create_settings_tab()
         
         # Status bar
         if self.user:
@@ -439,6 +441,468 @@ class InspectionMainWindow(QMainWindow):
         layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
         
         self.tab_widget.addTab(status_widget, "System Status")
+        
+    def create_settings_tab(self):
+        """Create the settings configuration tab"""
+        settings_widget = QWidget()
+        layout = QVBoxLayout(settings_widget)
+        
+        # Title and save/restart buttons
+        header_layout = QHBoxLayout()
+        title_label = QLabel("Application Settings")
+        title_label.setStyleSheet("QLabel { font-size: 16px; font-weight: bold; }")
+        header_layout.addWidget(title_label)
+        
+        header_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
+        
+        save_btn = QPushButton("💾 Save Settings")
+        save_btn.clicked.connect(self.save_settings)
+        save_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #4CAF50; color: white; }")
+        header_layout.addWidget(save_btn)
+        
+        restart_btn = QPushButton("🔄 Save & Restart")
+        restart_btn.clicked.connect(self.save_and_restart)
+        restart_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #FF9800; color: white; }")
+        header_layout.addWidget(restart_btn)
+        
+        layout.addLayout(header_layout)
+        
+        # Create scrollable area for settings
+        scroll_area = QScrollArea()
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Initialize settings storage
+        self.settings_widgets = {}
+        
+        # Database Settings
+        db_group = QGroupBox("Database Configuration")
+        db_layout = QGridLayout(db_group)
+        
+        db_config = self.config_manager.get_database_config()
+        
+        # Database host
+        db_layout.addWidget(QLabel("Host:"), 0, 0)
+        self.settings_widgets['database_host'] = QLineEdit(str(db_config.get('host', 'localhost')))
+        db_layout.addWidget(self.settings_widgets['database_host'], 0, 1)
+        
+        # Database port
+        db_layout.addWidget(QLabel("Port:"), 1, 0)
+        self.settings_widgets['database_port'] = QSpinBox()
+        self.settings_widgets['database_port'].setRange(1, 65535)
+        self.settings_widgets['database_port'].setValue(int(db_config.get('port', 5432)))
+        db_layout.addWidget(self.settings_widgets['database_port'], 1, 1)
+        
+        # Database username
+        db_layout.addWidget(QLabel("Username:"), 2, 0)
+        self.settings_widgets['database_username'] = QLineEdit(str(db_config.get('username', 'postgres')))
+        db_layout.addWidget(self.settings_widgets['database_username'], 2, 1)
+        
+        # Database password
+        db_layout.addWidget(QLabel("Password:"), 3, 0)
+        self.settings_widgets['database_password'] = QLineEdit(str(db_config.get('password', '')))
+        self.settings_widgets['database_password'].setEchoMode(QLineEdit.Password)
+        db_layout.addWidget(self.settings_widgets['database_password'], 3, 1)
+        
+        # Database name
+        db_layout.addWidget(QLabel("Database:"), 4, 0)
+        self.settings_widgets['database_database'] = QLineEdit(str(db_config.get('database', 'lab_inspection')))
+        db_layout.addWidget(self.settings_widgets['database_database'], 4, 1)
+        
+        scroll_layout.addWidget(db_group)
+        
+        # Systems Settings
+        systems_group = QGroupBox("Systems Configuration")
+        systems_layout = QVBoxLayout(systems_group)
+        
+        systems_config = self.config_manager.get_systems_config()
+        
+        for system_name, system_config in systems_config.items():
+            system_subgroup = QGroupBox(f"{system_name.title()} System")
+            system_sublayout = QGridLayout(system_subgroup)
+            
+            row = 0
+            # Connection type
+            system_sublayout.addWidget(QLabel("Connection Type:"), row, 0)
+            self.settings_widgets[f'systems_{system_name}_connection_type'] = QLineEdit(str(system_config.get('connection_type', '')))
+            system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_connection_type'], row, 1)
+            row += 1
+            
+            # IP address (for TCP connections)
+            if system_config.get('connection_type') == 'tcp':
+                system_sublayout.addWidget(QLabel("IP Address:"), row, 0)
+                self.settings_widgets[f'systems_{system_name}_ip'] = QLineEdit(str(system_config.get('ip', '')))
+                system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_ip'], row, 1)
+                row += 1
+                
+                if 'port' in system_config:
+                    system_sublayout.addWidget(QLabel("Port:"), row, 0)
+                    self.settings_widgets[f'systems_{system_name}_port'] = QSpinBox()
+                    self.settings_widgets[f'systems_{system_name}_port'].setRange(1, 65535)
+                    self.settings_widgets[f'systems_{system_name}_port'].setValue(int(system_config.get('port', 8080)))
+                    system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_port'], row, 1)
+                    row += 1
+            
+            # Serial port (for serial connections)
+            if system_config.get('connection_type') == 'serial':
+                system_sublayout.addWidget(QLabel("Port:"), row, 0)
+                self.settings_widgets[f'systems_{system_name}_port'] = QLineEdit(str(system_config.get('port', '')))
+                system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_port'], row, 1)
+                row += 1
+                
+                if 'baudrate' in system_config:
+                    system_sublayout.addWidget(QLabel("Baudrate:"), row, 0)
+                    self.settings_widgets[f'systems_{system_name}_baudrate'] = QSpinBox()
+                    self.settings_widgets[f'systems_{system_name}_baudrate'].setRange(300, 115200)
+                    self.settings_widgets[f'systems_{system_name}_baudrate'].setValue(int(system_config.get('baudrate', 9600)))
+                    system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_baudrate'], row, 1)
+                    row += 1
+            
+            # USB device (for USB connections)
+            if system_config.get('connection_type') == 'usb':
+                system_sublayout.addWidget(QLabel("Device ID:"), row, 0)
+                self.settings_widgets[f'systems_{system_name}_device_id'] = QLineEdit(str(system_config.get('device_id', '')))
+                system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_device_id'], row, 1)
+                row += 1
+            
+            # Timeout
+            system_sublayout.addWidget(QLabel("Timeout (s):"), row, 0)
+            self.settings_widgets[f'systems_{system_name}_timeout'] = QSpinBox()
+            self.settings_widgets[f'systems_{system_name}_timeout'].setRange(1, 300)
+            self.settings_widgets[f'systems_{system_name}_timeout'].setValue(int(system_config.get('timeout', 30)))
+            system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_timeout'], row, 1)
+            row += 1
+            
+            # Programs path (for gantry and xarm)
+            if 'programs_path' in system_config:
+                system_sublayout.addWidget(QLabel("Programs Path:"), row, 0)
+                self.settings_widgets[f'systems_{system_name}_programs_path'] = QLineEdit(str(system_config.get('programs_path', '')))
+                system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_programs_path'], row, 1)
+                row += 1
+            
+            # Scanner-specific settings
+            if 'llt_path' in system_config:
+                system_sublayout.addWidget(QLabel("LLT SDK Path:"), row, 0)
+                self.settings_widgets[f'systems_{system_name}_llt_path'] = QLineEdit(str(system_config.get('llt_path', '')))
+                system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_llt_path'], row, 1)
+                row += 1
+            
+            # Camera-specific settings
+            if 'use_realsense_sdk' in system_config:
+                self.settings_widgets[f'systems_{system_name}_use_realsense_sdk'] = QCheckBox("Use RealSense SDK")
+                self.settings_widgets[f'systems_{system_name}_use_realsense_sdk'].setChecked(bool(system_config.get('use_realsense_sdk', False)))
+                system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_use_realsense_sdk'], row, 0, 1, 2)
+                row += 1
+            
+            systems_layout.addWidget(system_subgroup)
+        
+        scroll_layout.addWidget(systems_group)
+        
+        # Output Settings
+        output_group = QGroupBox("Output Configuration")
+        output_layout = QGridLayout(output_group)
+        
+        output_config = self.config_manager.get_config().get('output', {})
+        
+        output_layout.addWidget(QLabel("Base Directory:"), 0, 0)
+        self.settings_widgets['output_base_directory'] = QLineEdit(str(output_config.get('base_directory', 'output')))
+        output_layout.addWidget(self.settings_widgets['output_base_directory'], 0, 1)
+        
+        output_layout.addWidget(QLabel("Inspection Prefix:"), 1, 0)
+        self.settings_widgets['output_inspection_folder_prefix'] = QLineEdit(str(output_config.get('inspection_folder_prefix', 'inspection_')))
+        output_layout.addWidget(self.settings_widgets['output_inspection_folder_prefix'], 1, 1)
+        
+        output_layout.addWidget(QLabel("Date Format:"), 2, 0)
+        self.settings_widgets['output_date_format'] = QLineEdit(str(output_config.get('date_format', '%Y-%m-%d')))
+        output_layout.addWidget(self.settings_widgets['output_date_format'], 2, 1)
+        
+        output_layout.addWidget(QLabel("Time Format:"), 3, 0)
+        self.settings_widgets['output_time_format'] = QLineEdit(str(output_config.get('time_format', '%Y%m%d_%H%M%S')))
+        output_layout.addWidget(self.settings_widgets['output_time_format'], 3, 1)
+        
+        scroll_layout.addWidget(output_group)
+        
+        # Logging Settings
+        logging_group = QGroupBox("Logging Configuration")
+        logging_layout = QGridLayout(logging_group)
+        
+        logging_config = self.config_manager.get_config().get('logging', {})
+        
+        logging_layout.addWidget(QLabel("Log Level:"), 0, 0)
+        self.settings_widgets['logging_level'] = QComboBox()
+        self.settings_widgets['logging_level'].addItems(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
+        current_level = str(logging_config.get('level', 'INFO'))
+        if current_level in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']:
+            self.settings_widgets['logging_level'].setCurrentText(current_level)
+        logging_layout.addWidget(self.settings_widgets['logging_level'], 0, 1)
+        
+        logging_layout.addWidget(QLabel("Log Folder:"), 1, 0)
+        self.settings_widgets['logging_log_folder_path'] = QLineEdit(str(logging_config.get('log_folder_path', 'logs')))
+        logging_layout.addWidget(self.settings_widgets['logging_log_folder_path'], 1, 1)
+        
+        logging_layout.addWidget(QLabel("Log File Prefix:"), 2, 0)
+        self.settings_widgets['logging_log_file_prefix'] = QLineEdit(str(logging_config.get('log_file_prefix', 'app')))
+        logging_layout.addWidget(self.settings_widgets['logging_log_file_prefix'], 2, 1)
+        
+        self.settings_widgets['logging_console'] = QCheckBox("Enable Console Logging")
+        self.settings_widgets['logging_console'].setChecked(bool(logging_config.get('console', True)))
+        logging_layout.addWidget(self.settings_widgets['logging_console'], 3, 0, 1, 2)
+        
+        scroll_layout.addWidget(logging_group)
+        
+        # GUI Settings
+        gui_group = QGroupBox("GUI Configuration")
+        gui_layout = QGridLayout(gui_group)
+        
+        gui_config = self.config_manager.get_config().get('gui', {})
+        
+        gui_layout.addWidget(QLabel("Window Title:"), 0, 0)
+        self.settings_widgets['gui_window_title'] = QLineEdit(str(gui_config.get('window_title', 'AUAS Scenario Inspector')))
+        gui_layout.addWidget(self.settings_widgets['gui_window_title'], 0, 1)
+        
+        gui_layout.addWidget(QLabel("Theme:"), 1, 0)
+        self.settings_widgets['gui_theme'] = QComboBox()
+        self.settings_widgets['gui_theme'].addItems(['default', 'dark', 'light'])
+        current_theme = str(gui_config.get('theme', 'default'))
+        if current_theme in ['default', 'dark', 'light']:
+            self.settings_widgets['gui_theme'].setCurrentText(current_theme)
+        gui_layout.addWidget(self.settings_widgets['gui_theme'], 1, 1)
+        
+        gui_layout.addWidget(QLabel("Default Geometry:"), 2, 0)
+        self.settings_widgets['gui_default_geometry'] = QLineEdit(str(gui_config.get('default_geometry', '1200x800')))
+        gui_layout.addWidget(self.settings_widgets['gui_default_geometry'], 2, 1)
+        
+        scroll_layout.addWidget(gui_group)
+        
+        # Security Settings
+        security_group = QGroupBox("Security Configuration")
+        security_layout = QGridLayout(security_group)
+        
+        security_config = self.config_manager.get_config().get('security', {})
+        
+        security_layout.addWidget(QLabel("Bcrypt Rounds:"), 0, 0)
+        self.settings_widgets['security_bcrypt_rounds'] = QSpinBox()
+        self.settings_widgets['security_bcrypt_rounds'].setRange(4, 20)
+        self.settings_widgets['security_bcrypt_rounds'].setValue(int(security_config.get('bcrypt_rounds', 12)))
+        security_layout.addWidget(self.settings_widgets['security_bcrypt_rounds'], 0, 1)
+        
+        security_layout.addWidget(QLabel("Session Timeout (s):"), 1, 0)
+        self.settings_widgets['security_session_timeout'] = QSpinBox()
+        self.settings_widgets['security_session_timeout'].setRange(60, 86400)
+        self.settings_widgets['security_session_timeout'].setValue(int(security_config.get('session_timeout', 3600)))
+        security_layout.addWidget(self.settings_widgets['security_session_timeout'], 1, 1)
+        
+        scroll_layout.addWidget(security_group)
+        
+        # Set up scroll area
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
+        layout.addWidget(scroll_area)
+        
+        self.tab_widget.addTab(settings_widget, "Settings")
+        
+    def save_settings(self):
+        """Save the current settings to app_config.yaml"""
+        try:
+            # Update configuration with current widget values
+            config = self.config_manager.get_config().copy()
+            
+            # Database settings
+            if 'database' not in config:
+                config['database'] = {}
+            config['database']['host'] = self.settings_widgets['database_host'].text()
+            config['database']['port'] = self.settings_widgets['database_port'].value()
+            config['database']['username'] = self.settings_widgets['database_username'].text()
+            config['database']['password'] = self.settings_widgets['database_password'].text()
+            config['database']['database'] = self.settings_widgets['database_database'].text()
+            
+            # Systems settings
+            if 'systems' not in config:
+                config['systems'] = {}
+            
+            systems_config = self.config_manager.get_systems_config()
+            for system_name, system_config in systems_config.items():
+                if system_name not in config['systems']:
+                    config['systems'][system_name] = {}
+                
+                # Update each system's settings
+                for key, value in system_config.items():
+                    widget_key = f'systems_{system_name}_{key}'
+                    if widget_key in self.settings_widgets:
+                        widget = self.settings_widgets[widget_key]
+                        if isinstance(widget, QLineEdit):
+                            config['systems'][system_name][key] = widget.text()
+                        elif isinstance(widget, QSpinBox):
+                            config['systems'][system_name][key] = widget.value()
+                        elif isinstance(widget, QCheckBox):
+                            config['systems'][system_name][key] = widget.isChecked()
+                        elif isinstance(widget, QComboBox):
+                            config['systems'][system_name][key] = widget.currentText()
+            
+            # Output settings
+            if 'output' not in config:
+                config['output'] = {}
+            config['output']['base_directory'] = self.settings_widgets['output_base_directory'].text()
+            config['output']['inspection_folder_prefix'] = self.settings_widgets['output_inspection_folder_prefix'].text()
+            config['output']['date_format'] = self.settings_widgets['output_date_format'].text()
+            config['output']['time_format'] = self.settings_widgets['output_time_format'].text()
+            
+            # Logging settings
+            if 'logging' not in config:
+                config['logging'] = {}
+            config['logging']['level'] = self.settings_widgets['logging_level'].currentText()
+            config['logging']['log_folder_path'] = self.settings_widgets['logging_log_folder_path'].text()
+            config['logging']['log_file_prefix'] = self.settings_widgets['logging_log_file_prefix'].text()
+            config['logging']['console'] = self.settings_widgets['logging_console'].isChecked()
+            
+            # GUI settings
+            if 'gui' not in config:
+                config['gui'] = {}
+            config['gui']['window_title'] = self.settings_widgets['gui_window_title'].text()
+            config['gui']['theme'] = self.settings_widgets['gui_theme'].currentText()
+            config['gui']['default_geometry'] = self.settings_widgets['gui_default_geometry'].text()
+            
+            # Security settings
+            if 'security' not in config:
+                config['security'] = {}
+            config['security']['bcrypt_rounds'] = self.settings_widgets['security_bcrypt_rounds'].value()
+            config['security']['session_timeout'] = self.settings_widgets['security_session_timeout'].value()
+            
+            # Save to file with preserved formatting
+            import yaml
+            import os
+            
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config', 'app_config.yaml')
+            
+            # Read the original file as text to preserve formatting
+            with open(config_path, 'r') as f:
+                lines = f.readlines()
+            
+            # Function to update specific values while preserving format
+            def update_yaml_line(lines, section, key, new_value, subsection=None):
+                in_section = False
+                in_subsection = False if subsection else True
+                
+                for i, line in enumerate(lines):
+                    # Check if we're entering the target section
+                    if line.strip().startswith(f'{section}:'):
+                        in_section = True
+                        continue
+                    
+                    # Check if we're leaving the section (new top-level section)
+                    if in_section and line.startswith((' ', '\t')) == False and line.strip() and ':' in line:
+                        in_section = False
+                        in_subsection = False
+                        continue
+                    
+                    # If we need a subsection, check for it
+                    if in_section and subsection and line.strip().startswith(f'{subsection}:'):
+                        in_subsection = True
+                        continue
+                    
+                    # Check if we're leaving the subsection
+                    if in_section and subsection and in_subsection and line.strip() and not line.startswith((' ', '\t', f'  {key}:')):
+                        if line.strip().endswith(':') and not line.strip().startswith('#'):
+                            in_subsection = False
+                            continue
+                    
+                    # Look for the target key
+                    if in_section and in_subsection and line.strip().startswith(f'{key}:'):
+                        # Format the new value
+                        if isinstance(new_value, str):
+                            # Handle Windows paths - double the backslashes
+                            if '\\' in new_value and not new_value.startswith(('ftp://', 'http://', 'https://')):
+                                # This is a Windows path, escape backslashes
+                                escaped_value = new_value.replace('\\', '\\\\')
+                                formatted_value = f'"{escaped_value}"'
+                            else:
+                                formatted_value = f'"{new_value}"'
+                        elif isinstance(new_value, bool):
+                            formatted_value = str(new_value).lower()
+                        else:
+                            formatted_value = str(new_value)
+                        
+                        # Preserve indentation
+                        indent = line[:len(line) - len(line.lstrip())]
+                        lines[i] = f'{indent}{key}: {formatted_value}\n'
+                        break
+                
+                return lines
+            
+            # Update each changed value
+            updated_lines = lines[:]
+            
+            # Database settings
+            updated_lines = update_yaml_line(updated_lines, 'database', 'host', self.settings_widgets['database_host'].text())
+            updated_lines = update_yaml_line(updated_lines, 'database', 'port', self.settings_widgets['database_port'].value())
+            updated_lines = update_yaml_line(updated_lines, 'database', 'username', self.settings_widgets['database_username'].text())
+            updated_lines = update_yaml_line(updated_lines, 'database', 'password', self.settings_widgets['database_password'].text())
+            updated_lines = update_yaml_line(updated_lines, 'database', 'database', self.settings_widgets['database_database'].text())
+            
+            # Systems settings
+            systems_config = self.config_manager.get_systems_config()
+            for system_name, system_config in systems_config.items():
+                for key, value in system_config.items():
+                    widget_key = f'systems_{system_name}_{key}'
+                    if widget_key in self.settings_widgets:
+                        widget = self.settings_widgets[widget_key]
+                        if isinstance(widget, QLineEdit):
+                            new_value = widget.text()
+                        elif isinstance(widget, QSpinBox):
+                            new_value = widget.value()
+                        elif isinstance(widget, QCheckBox):
+                            new_value = widget.isChecked()
+                        elif isinstance(widget, QComboBox):
+                            new_value = widget.currentText()
+                        else:
+                            continue
+                        
+                        updated_lines = update_yaml_line(updated_lines, 'systems', key, new_value, system_name)
+            
+            # Output settings
+            updated_lines = update_yaml_line(updated_lines, 'output', 'base_directory', self.settings_widgets['output_base_directory'].text())
+            updated_lines = update_yaml_line(updated_lines, 'output', 'inspection_folder_prefix', self.settings_widgets['output_inspection_folder_prefix'].text())
+            updated_lines = update_yaml_line(updated_lines, 'output', 'date_format', self.settings_widgets['output_date_format'].text())
+            updated_lines = update_yaml_line(updated_lines, 'output', 'time_format', self.settings_widgets['output_time_format'].text())
+            
+            # Logging settings
+            updated_lines = update_yaml_line(updated_lines, 'logging', 'level', self.settings_widgets['logging_level'].currentText())
+            updated_lines = update_yaml_line(updated_lines, 'logging', 'log_folder_path', self.settings_widgets['logging_log_folder_path'].text())
+            updated_lines = update_yaml_line(updated_lines, 'logging', 'log_file_prefix', self.settings_widgets['logging_log_file_prefix'].text())
+            updated_lines = update_yaml_line(updated_lines, 'logging', 'console', self.settings_widgets['logging_console'].isChecked())
+            
+            # GUI settings
+            updated_lines = update_yaml_line(updated_lines, 'gui', 'window_title', self.settings_widgets['gui_window_title'].text())
+            updated_lines = update_yaml_line(updated_lines, 'gui', 'theme', self.settings_widgets['gui_theme'].currentText())
+            updated_lines = update_yaml_line(updated_lines, 'gui', 'default_geometry', self.settings_widgets['gui_default_geometry'].text())
+            
+            # Security settings
+            updated_lines = update_yaml_line(updated_lines, 'security', 'bcrypt_rounds', self.settings_widgets['security_bcrypt_rounds'].value())
+            updated_lines = update_yaml_line(updated_lines, 'security', 'session_timeout', self.settings_widgets['security_session_timeout'].value())
+            
+            # Write the updated content back
+            with open(config_path, 'w') as f:
+                f.writelines(updated_lines)
+            
+            QMessageBox.information(self, "Settings Saved", "Settings have been saved successfully!")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error Saving Settings", f"Failed to save settings: {str(e)}")
+    
+    def save_and_restart(self):
+        """Save settings and restart the application"""
+        self.save_settings()
+        
+        # Ask for confirmation
+        reply = QMessageBox.question(self, "Restart Application", 
+                                   "Settings saved. Do you want to restart the application now?",
+                                   QMessageBox.Yes | QMessageBox.No)
+        
+        if reply == QMessageBox.Yes:
+            # Restart the application
+            import sys
+            QApplication.quit()
+            os.execv(sys.executable, ['python'] + sys.argv)
         
     def _initialize_status_display(self):
         """Initialize the status display grid"""
