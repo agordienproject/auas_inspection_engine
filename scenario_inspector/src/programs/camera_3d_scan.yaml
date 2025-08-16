@@ -1,0 +1,32 @@
+program:
+  name: "camera_3d_scan"
+  description: "Complete 3D scan - high quality color + depth + analysis"
+  
+  stages:
+    - stage: 1
+      name: "3d_color_capture"
+      together: false    
+      steps:
+        - step: 1
+          name: "color_hq"
+          system: "camera"
+          action: "capture_image"
+          saving_file: true
+          parameters:
+            filename: "3d_scan_color.jpg"
+            quality: 100
+            enhance_quality: true
+            denoise: true
+    - stage: 2
+      name: "3d_depth_capture"
+      together: false
+      steps:
+        - step: 1
+          name: "depth_analysis"
+          system: "camera"
+          action: "capture_depth"
+          saving_file: true
+          parameters:
+            filename: "3d_scan_depth.png"
+            create_colormap: true
+            save_raw: true

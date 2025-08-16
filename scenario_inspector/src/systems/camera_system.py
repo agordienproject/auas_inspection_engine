@@ -335,7 +335,7 @@ class RealSenseCameraController:
             raise RuntimeError("Camera not capturing")
         
         if not REALSENSE_AVAILABLE or not self.pipeline:
-            raise RuntimeError("Depth capture requires Intel RealSense camera")
+            raise RuntimeError("Depth capture requires Intel RealSense camera. Current camera does not support depth sensing.")
         
         try:
             frames = self.pipeline.wait_for_frames()
@@ -346,6 +346,14 @@ class RealSenseCameraController:
             
             # Convert to numpy array
             depth_image = np.asanyarray(depth_frame.get_data())
+            
+            # Log depth information
+            valid_pixels = np.count_nonzero(depth_image)
+            total_pixels = depth_image.size
+            valid_percentage = (valid_pixels / total_pixels) * 100
+            
+            self.logger.info(f"Depth frame captured: {depth_image.shape}, "
+                           f"{valid_pixels}/{total_pixels} valid pixels ({valid_percentage:.1f}%)")
             
             if filename:
                 # Save as 16-bit PNG to preserve depth data
@@ -709,18 +717,70 @@ class CameraSystem(BaseSystem):
             if output_dir and not os.path.exists(output_dir):
                 os.makedirs(output_dir, exist_ok=True)
             
-            # Capture depth image
-            depth_image = self.controller.capture_depth_image(filename)
+            # Get additional parameters
+            create_colormap = parameters.get('create_colormap', True)  # Generate colorized depth image
+            save_raw = parameters.get('save_raw', True)  # Save raw 16-bit depth data
             
-            return {
+            # Capture depth image
+            depth_image = self.controller.capture_depth_image(filename if save_raw else None)
+            
+            results = {
                 "success": True,
-                "filename": filename,
                 "depth_shape": depth_image.shape if depth_image is not None else None,
                 "message": f"Depth image captured successfully: {filename}"
             }
             
+            # Create colorized version for visualization
+            if create_colormap and depth_image is not None:
+                colormap_filename = filename.replace('.png', '_colormap.png')
+                colorized_depth = self._create_depth_colormap(depth_image)
+                cv2.imwrite(colormap_filename, colorized_depth)
+                results["colormap_filename"] = colormap_filename
+                results["message"] += f" and colormap: {colormap_filename}"
+            
+            # Add depth statistics
+            if depth_image is not None:
+                # Filter out zero values (invalid depth)
+                valid_depth = depth_image[depth_image > 0]
+                if len(valid_depth) > 0:
+                    results["depth_stats"] = {
+                        "min_depth_mm": int(np.min(valid_depth)),
+                        "max_depth_mm": int(np.max(valid_depth)),
+                        "mean_depth_mm": int(np.mean(valid_depth)),
+                        "valid_pixels": len(valid_depth),
+                        "total_pixels": depth_image.size
+                    }
+            
+            # Calculate file size
+            if os.path.exists(filename):
+                file_size = os.path.getsize(filename)
+                results["file_size_mb"] = round(file_size / (1024*1024), 2)
+            
+            results["filename"] = filename
+            return results
+            
         except Exception as e:
             return {"success": False, "error": str(e)}
+    
+    def _create_depth_colormap(self, depth_image):
+        """Create a colorized depth image for visualization"""
+        try:
+            # Normalize depth image to 0-255 range
+            depth_normalized = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+            
+            # Apply colormap (COLORMAP_JET gives a nice rainbow effect)
+            colorized = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_JET)
+            
+            # Set invalid depth pixels (0) to black
+            mask = depth_image == 0
+            colorized[mask] = [0, 0, 0]
+            
+            return colorized
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create depth colormap: {e}")
+            # Return a simple grayscale version as fallback
+            return cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
     
     def _start_stream(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Start camera streaming"""

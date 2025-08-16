@@ -1,0 +1,24 @@
+program:
+  name: "camera_color_depth"
+  description: "Capture both color and depth images for 3D analysis"
+  
+  stages:
+    - stage: 1
+      name: "camera_color_depth"
+      together: false    
+      steps:
+        - step: 1
+          name: "color_image"
+          system: "camera"
+          action: "capture_image"
+          saving_file: true
+          parameters:
+            filename: "color_image.jpg"
+            quality: 100
+        - step: 2
+          name: "depth_image"
+          system: "camera"
+          action: "capture_depth"
+          saving_file: true
+          parameters:
+            filename: "depth_image.png"
