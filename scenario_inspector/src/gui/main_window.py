@@ -17,6 +17,14 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QPalette
 
+
+class NoWheelSpinBox(QSpinBox):
+    """Custom QSpinBox that ignores wheel events to prevent accidental value changes"""
+    
+    def wheelEvent(self, event):
+        """Ignore wheel events to prevent accidental scrolling changes"""
+        event.ignore()
+
 from config.config_manager import ConfigManager
 from database.models import User
 from systems.system_manager import SystemManager
@@ -335,15 +343,15 @@ class InspectionMainWindow(QMainWindow):
         exec_widget = QWidget()
         layout = QVBoxLayout(exec_widget)
         
-        # Database status indicator
-        self.db_status_group = QGroupBox("Database Status")
-        db_status_layout = QHBoxLayout(self.db_status_group)
+        # API status indicator
+        self.api_status_group = QGroupBox("API Status")
+        api_status_layout = QHBoxLayout(self.api_status_group)
         
-        self.db_status_label = QLabel()
-        self.update_database_status_display()
-        db_status_layout.addWidget(self.db_status_label)
+        self.api_status_label = QLabel()
+        self.update_api_status_display()
+        api_status_layout.addWidget(self.api_status_label)
         
-        layout.addWidget(self.db_status_group)
+        layout.addWidget(self.api_status_group)
         
         # Execution controls
         controls_group = QGroupBox("Execution Controls")
@@ -475,8 +483,44 @@ class InspectionMainWindow(QMainWindow):
         # Initialize settings storage
         self.settings_widgets = {}
         
-        # Database Settings
-        db_group = QGroupBox("Database Configuration")
+        # API Settings (replaces database settings)
+        api_group = QGroupBox("API Configuration")
+        api_layout = QGridLayout(api_group)
+        
+        api_config = self.config_manager.get_api_config()
+        
+        # API URL
+        api_layout.addWidget(QLabel("API URL:"), 0, 0)
+        self.settings_widgets['api_url'] = QLineEdit(str(api_config.get('url', '127.0.0.1:3000/api')))
+        api_layout.addWidget(self.settings_widgets['api_url'], 0, 1)
+        
+        # Login endpoint
+        api_layout.addWidget(QLabel("Login Endpoint:"), 1, 0)
+        self.settings_widgets['api_login_endpoint'] = QLineEdit(str(api_config.get('login_endpoint', '/auth/login')))
+        api_layout.addWidget(self.settings_widgets['api_login_endpoint'], 1, 1)
+        
+        # Inspection endpoint
+        api_layout.addWidget(QLabel("Inspection Endpoint:"), 2, 0)
+        self.settings_widgets['api_inspection_endpoint'] = QLineEdit(str(api_config.get('inspection_endpoint', '/inspections')))
+        api_layout.addWidget(self.settings_widgets['api_inspection_endpoint'], 2, 1)
+        
+        # Timeout
+        api_layout.addWidget(QLabel("Timeout (s):"), 3, 0)
+        self.settings_widgets['api_timeout'] = NoWheelSpinBox()
+        self.settings_widgets['api_timeout'].setRange(5, 300)
+        self.settings_widgets['api_timeout'].setValue(int(api_config.get('timeout', 30)))
+        api_layout.addWidget(self.settings_widgets['api_timeout'], 3, 1)
+        
+        # Use HTTPS
+        self.settings_widgets['api_use_https'] = QCheckBox("Use HTTPS")
+        self.settings_widgets['api_use_https'].setChecked(bool(api_config.get('use_https', False)))
+        api_layout.addWidget(self.settings_widgets['api_use_https'], 4, 0, 1, 2)
+        
+        scroll_layout.addWidget(api_group)
+        
+        # Legacy Database Settings (kept for reference)
+        db_group = QGroupBox("Legacy Database Configuration (API is now used)")
+        db_group.setEnabled(False)  # Disable since we're using API
         db_layout = QGridLayout(db_group)
         
         db_config = self.config_manager.get_database_config()
@@ -488,7 +532,7 @@ class InspectionMainWindow(QMainWindow):
         
         # Database port
         db_layout.addWidget(QLabel("Port:"), 1, 0)
-        self.settings_widgets['database_port'] = QSpinBox()
+        self.settings_widgets['database_port'] = NoWheelSpinBox()
         self.settings_widgets['database_port'].setRange(1, 65535)
         self.settings_widgets['database_port'].setValue(int(db_config.get('port', 5432)))
         db_layout.addWidget(self.settings_widgets['database_port'], 1, 1)
@@ -537,7 +581,7 @@ class InspectionMainWindow(QMainWindow):
                 
                 if 'port' in system_config:
                     system_sublayout.addWidget(QLabel("Port:"), row, 0)
-                    self.settings_widgets[f'systems_{system_name}_port'] = QSpinBox()
+                    self.settings_widgets[f'systems_{system_name}_port'] = NoWheelSpinBox()
                     self.settings_widgets[f'systems_{system_name}_port'].setRange(1, 65535)
                     self.settings_widgets[f'systems_{system_name}_port'].setValue(int(system_config.get('port', 8080)))
                     system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_port'], row, 1)
@@ -552,7 +596,7 @@ class InspectionMainWindow(QMainWindow):
                 
                 if 'baudrate' in system_config:
                     system_sublayout.addWidget(QLabel("Baudrate:"), row, 0)
-                    self.settings_widgets[f'systems_{system_name}_baudrate'] = QSpinBox()
+                    self.settings_widgets[f'systems_{system_name}_baudrate'] = NoWheelSpinBox()
                     self.settings_widgets[f'systems_{system_name}_baudrate'].setRange(300, 115200)
                     self.settings_widgets[f'systems_{system_name}_baudrate'].setValue(int(system_config.get('baudrate', 9600)))
                     system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_baudrate'], row, 1)
@@ -567,7 +611,7 @@ class InspectionMainWindow(QMainWindow):
             
             # Timeout
             system_sublayout.addWidget(QLabel("Timeout (s):"), row, 0)
-            self.settings_widgets[f'systems_{system_name}_timeout'] = QSpinBox()
+            self.settings_widgets[f'systems_{system_name}_timeout'] = NoWheelSpinBox()
             self.settings_widgets[f'systems_{system_name}_timeout'].setRange(1, 300)
             self.settings_widgets[f'systems_{system_name}_timeout'].setValue(int(system_config.get('timeout', 30)))
             system_sublayout.addWidget(self.settings_widgets[f'systems_{system_name}_timeout'], row, 1)
@@ -681,13 +725,13 @@ class InspectionMainWindow(QMainWindow):
         security_config = self.config_manager.get_config().get('security', {})
         
         security_layout.addWidget(QLabel("Bcrypt Rounds:"), 0, 0)
-        self.settings_widgets['security_bcrypt_rounds'] = QSpinBox()
+        self.settings_widgets['security_bcrypt_rounds'] = NoWheelSpinBox()
         self.settings_widgets['security_bcrypt_rounds'].setRange(4, 20)
         self.settings_widgets['security_bcrypt_rounds'].setValue(int(security_config.get('bcrypt_rounds', 12)))
         security_layout.addWidget(self.settings_widgets['security_bcrypt_rounds'], 0, 1)
         
         security_layout.addWidget(QLabel("Session Timeout (s):"), 1, 0)
-        self.settings_widgets['security_session_timeout'] = QSpinBox()
+        self.settings_widgets['security_session_timeout'] = NoWheelSpinBox()
         self.settings_widgets['security_session_timeout'].setRange(60, 86400)
         self.settings_widgets['security_session_timeout'].setValue(int(security_config.get('session_timeout', 3600)))
         security_layout.addWidget(self.settings_widgets['security_session_timeout'], 1, 1)
@@ -707,7 +751,16 @@ class InspectionMainWindow(QMainWindow):
             # Update configuration with current widget values
             config = self.config_manager.get_config().copy()
             
-            # Database settings
+            # API settings (new)
+            if 'api' not in config:
+                config['api'] = {}
+            config['api']['url'] = self.settings_widgets['api_url'].text()
+            config['api']['login_endpoint'] = self.settings_widgets['api_login_endpoint'].text()
+            config['api']['inspection_endpoint'] = self.settings_widgets['api_inspection_endpoint'].text()
+            config['api']['timeout'] = self.settings_widgets['api_timeout'].value()
+            config['api']['use_https'] = self.settings_widgets['api_use_https'].isChecked()
+            
+            # Database settings (legacy, kept for reference)
             if 'database' not in config:
                 config['database'] = {}
             config['database']['host'] = self.settings_widgets['database_host'].text()
@@ -732,7 +785,7 @@ class InspectionMainWindow(QMainWindow):
                         widget = self.settings_widgets[widget_key]
                         if isinstance(widget, QLineEdit):
                             config['systems'][system_name][key] = widget.text()
-                        elif isinstance(widget, QSpinBox):
+                        elif isinstance(widget, (QSpinBox, NoWheelSpinBox)):
                             config['systems'][system_name][key] = widget.value()
                         elif isinstance(widget, QCheckBox):
                             config['systems'][system_name][key] = widget.isChecked()
@@ -848,7 +901,7 @@ class InspectionMainWindow(QMainWindow):
                         widget = self.settings_widgets[widget_key]
                         if isinstance(widget, QLineEdit):
                             new_value = widget.text()
-                        elif isinstance(widget, QSpinBox):
+                        elif isinstance(widget, (QSpinBox, NoWheelSpinBox)):
                             new_value = widget.value()
                         elif isinstance(widget, QCheckBox):
                             new_value = widget.isChecked()
@@ -1368,15 +1421,23 @@ class InspectionMainWindow(QMainWindow):
             if reply == QMessageBox.Yes:
                 self.close()
     
-    def update_database_status_display(self):
-        """Update the database status display"""
-        if hasattr(self, 'db_status_label'):
-            if self.user:
-                self.db_status_label.setText(f"🔐 Logged in as: {self.user.pseudo} | Database logging: ENABLED")
-                self.db_status_label.setStyleSheet("color: green; font-weight: bold;")
+    def update_api_status_display(self):
+        """Update the API status display"""
+        if hasattr(self, 'api_status_label'):
+            if self.user and hasattr(self.user, 'api_connection') and self.user.api_connection:
+                if self.user.api_connection.is_authenticated():
+                    self.api_status_label.setText(f"🔐 Logged in as: {self.user.pseudo} | API connection: ACTIVE")
+                    self.api_status_label.setStyleSheet("color: green; font-weight: bold;")
+                else:
+                    self.api_status_label.setText(f"⚠️ User: {self.user.pseudo} | API connection: EXPIRED")
+                    self.api_status_label.setStyleSheet("color: orange; font-weight: bold;")
             else:
-                self.db_status_label.setText("⚠️ Guest Mode | Database logging: DISABLED")
-                self.db_status_label.setStyleSheet("color: orange; font-weight: bold;")
+                self.api_status_label.setText("⚠️ Guest Mode | API connection: DISABLED")
+                self.api_status_label.setStyleSheet("color: orange; font-weight: bold;")
+    
+    def update_database_status_display(self):
+        """Update the database status display (legacy, now shows API status)"""
+        self.update_api_status_display()
     
     def update_ui_after_login(self):
         """Update UI elements after successful login"""

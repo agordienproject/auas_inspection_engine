@@ -24,6 +24,11 @@ def setup_logging():
     log_folder_path = log_config['log_folder_path']
     log_file_prefix = log_config['log_file_prefix']
     console_logging = log_config.get('console', True)
+    debug_mode = log_config.get('debug_mode', False)
+    
+    # Override log level to DEBUG if debug_mode is enabled
+    if debug_mode:
+        log_level = logging.DEBUG
     
     # Create timestamp strings
     now = datetime.now()
@@ -54,6 +59,11 @@ def setup_logging():
     # Log the file path for reference
     logger = logging.getLogger(__name__)
     logger.info(f"Log file created: {log_file_path}")
+    
+    # Log debug mode status
+    if debug_mode:
+        logger.info("DEBUG MODE ENABLED - Enhanced API logging is active")
+        logger.debug("Debug logging level is active")
 
 def main():
     """Main entry point for the Scenario Inspector application"""

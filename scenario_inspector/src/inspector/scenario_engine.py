@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import asdict
 
 from config.config_manager import ConfigManager
-from database.connection import DatabaseConnection
+from database.api_connection import APIConnection
 from database.models import Inspection, User
 from systems.system_manager import SystemManager
 from utils.file_manager import FileManager
@@ -21,7 +21,14 @@ class ScenarioEngine:
         self.user = user
         self.logger = logging.getLogger(__name__)
         self.config_manager = ConfigManager()
-        self.db_connection = DatabaseConnection()
+        
+        # Use API connection instead of direct database connection
+        if hasattr(user, 'api_connection') and user.api_connection:
+            self.api_connection = user.api_connection
+        else:
+            # Create new API connection if user doesn't have one
+            api_config = self.config_manager.get_api_config()
+            self.api_connection = APIConnection(api_config)
         
         # Initialize system manager instead of managing systems directly
         self.system_manager = SystemManager(self.config_manager)
@@ -183,10 +190,13 @@ class ScenarioEngine:
                 details=f"Executed {len(execution_results)} steps. Success rate: {sum(1 for r in execution_results if r.get('success', False))}/{len(execution_results)}"
             )
             
-            if self.db_connection.insert_inspection(inspection):
-                self.logger.info("Inspection data saved to database")
+            # Save inspection data via API
+            api_result = self.api_connection.save_inspection_data(inspection.to_dict())
+            if api_result.get('success', False):
+                self.current_inspection_id = api_result.get('inspection_id')
+                self.logger.info(f"Inspection data saved via API. ID: {self.current_inspection_id}")
             else:
-                self.logger.warning("Failed to save inspection data to database")
+                self.logger.warning(f"Failed to save inspection data via API: {api_result.get('message', 'Unknown error')}")
             
             self.logger.info(f"Scenario execution completed. Status: {'SUCCESS' if overall_success else 'FAILED'}")
             return overall_success

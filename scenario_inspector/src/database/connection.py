@@ -1,5 +1,11 @@
 """
-Simple database connection for Scenario Inspector
+DEPRECATED: Database connection for Scenario Inspector
+
+This file is DEPRECATED and no longer used.
+The application now uses API-based data access via APIConnection.
+See: database/api_connection.py
+
+This file is kept for reference only and may be removed in future versions.
 """
 import psycopg2
 import logging
@@ -18,7 +24,10 @@ class ConnectionTimeoutError(Exception):
 
 
 class DatabaseConnection:
-    """Simple database manager for authentication and inspection data insertion"""
+    """DEPRECATED: Simple database manager for authentication and inspection data insertion
+    
+    This class is deprecated. Use APIConnection instead.
+    """
     
     def __init__(self):
         self.config_manager = ConfigManager()
@@ -26,6 +35,9 @@ class DatabaseConnection:
         self.logger = logging.getLogger(__name__)
         self.password_utils = PasswordUtils(rounds=12)
         self.connection_timeout = 10  # 10 seconds timeout
+        
+        # Log deprecation warning
+        self.logger.warning("DatabaseConnection is DEPRECATED. Use APIConnection instead.")
     
     def _timeout_handler(self, signum, frame):
         """Handler for connection timeout"""

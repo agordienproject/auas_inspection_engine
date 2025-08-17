@@ -1,19 +1,19 @@
 """
 Login dialog and authentication for Scenario Inspector
+Now using API instead of direct database connection
 """
 import logging
-import psycopg2
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QMessageBox, QFrame)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QPalette
 
-from database.connection import DatabaseConnection, ConnectionTimeoutError
+from database.api_connection import APIConnection
 from database.models import User
-from auth.password_utils import PasswordUtils
+from config.config_manager import ConfigManager
 
 class LoginDialog(QDialog):
-    """Login dialog for user authentication"""
+    """Login dialog for user authentication using API"""
     
     # Signal emitted when user successfully logs in
     user_authenticated = pyqtSignal(User)
@@ -21,8 +21,12 @@ class LoginDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.logger = logging.getLogger(__name__)
-        self.db_connection = DatabaseConnection()
-        self.password_utils = PasswordUtils()
+        
+        # Initialize API connection
+        self.config_manager = ConfigManager()
+        api_config = self.config_manager.get_api_config()
+        self.api_connection = APIConnection(api_config)
+        
         self.authenticated_user = None
         
         self.setup_ui()
@@ -57,15 +61,15 @@ class LoginDialog(QDialog):
         separator.setFrameShadow(QFrame.Sunken)
         main_layout.addWidget(separator)
         
-        # Username field
-        username_layout = QHBoxLayout()
-        username_label = QLabel("Username:")
-        username_label.setMinimumWidth(80)
-        self.username_edit = QLineEdit()
-        self.username_edit.setPlaceholderText("Enter your username")
-        username_layout.addWidget(username_label)
-        username_layout.addWidget(self.username_edit)
-        main_layout.addLayout(username_layout)
+        # Email field (changed from username)
+        email_layout = QHBoxLayout()
+        email_label = QLabel("Email:")
+        email_label.setMinimumWidth(80)
+        self.email_edit = QLineEdit()
+        self.email_edit.setPlaceholderText("Enter your email address")
+        email_layout.addWidget(email_label)
+        email_layout.addWidget(self.email_edit)
+        main_layout.addLayout(email_layout)
         
         # Password field
         password_layout = QHBoxLayout()
@@ -95,16 +99,16 @@ class LoginDialog(QDialog):
         # Connect signals
         self.login_button.clicked.connect(self.attempt_login)
         self.cancel_button.clicked.connect(self.reject)
-        self.username_edit.returnPressed.connect(self.attempt_login)
+        self.email_edit.returnPressed.connect(self.attempt_login)
         self.password_edit.returnPressed.connect(self.attempt_login)
     
     def attempt_login(self):
-        """Attempt to authenticate user"""
-        username = self.username_edit.text().strip()
+        """Attempt to authenticate user via API"""
+        email = self.email_edit.text().strip()
         password = self.password_edit.text()
         
-        if not username or not password:
-            QMessageBox.warning(self, "Login Error", "Please enter both username and password.")
+        if not email or not password:
+            QMessageBox.warning(self, "Login Error", "Please enter both email and password.")
             return
         
         # Disable login button during authentication
@@ -112,38 +116,40 @@ class LoginDialog(QDialog):
         self.login_button.setText("Authenticating...")
         
         try:
-            # Test database connection first with improved error handling
-            connection_result = self.db_connection.test_connection()
-            if connection_result['status'] != 'success':
-                error_msg = connection_result.get('message', 'Unknown database error')
-                self.logger.error(f"Database connection failed: {error_msg}")
-                QMessageBox.critical(self, "Database Connection Failed", 
-                                   f"Cannot connect to database:\n{error_msg}\n\nPlease check your configuration.")
+            # Test API connection first
+            connection_result = self.api_connection.test_connection()
+            if connection_result['status'] != 'available':
+                error_msg = connection_result.get('message', 'Unknown API error')
+                self.logger.error(f"API connection failed: {error_msg}")
+                QMessageBox.critical(self, "API Connection Failed", 
+                                   f"Cannot connect to API server:\n{error_msg}\n\nPlease check your configuration and ensure the API server is running.")
                 return
             
-            # Authenticate user
-            user = self.db_connection.authenticate_user(username, password)
-            if not user:
-                QMessageBox.warning(self, "Login Failed", "Invalid username or password.")
+            # Authenticate user via API
+            auth_result = self.api_connection.authenticate(email, password)
+            
+            if not auth_result.get('success', False):
+                error_msg = auth_result.get('message', 'Authentication failed')
+                QMessageBox.warning(self, "Login Failed", error_msg)
                 return
+            
+            # Create user object from API response
+            user_data = auth_result.get('user_data', {})
+            user = User(
+                id_user=user_data.get('id'),
+                pseudo=user_data.get('pseudo', email),
+                email=user_data.get('email', email),
+                role=user_data.get('role', 'user')
+            )
+            
+            # Store API connection for later use
+            user.api_connection = self.api_connection
             
             # Authentication successful
             self.authenticated_user = user
             self.user_authenticated.emit(user)
             self.accept()
             
-        except ConnectionTimeoutError as e:
-            self.logger.error(f"Database connection timeout: {e}")
-            QMessageBox.critical(self, "Connection Timeout", 
-                               "Connection to database server timed out.\nPlease check your network connection and try again.")
-        except psycopg2.OperationalError as e:
-            self.logger.error(f"Database operational error: {e}")
-            if "authentication failed" in str(e).lower():
-                QMessageBox.critical(self, "Authentication Failed", 
-                                   "Database authentication failed.\nPlease check your database credentials in the configuration.")
-            else:
-                QMessageBox.critical(self, "Database Error", 
-                                   f"Database connection failed:\n{str(e)}")
         except Exception as e:
             self.logger.error(f"Login error: {e}")
             QMessageBox.critical(self, "Login Error", 

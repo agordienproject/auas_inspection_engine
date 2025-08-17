@@ -35,8 +35,12 @@ class ConfigManager:
             self.load_config()
         return self._config
     
+    def get_api_config(self) -> Dict[str, Any]:
+        """Get API configuration"""
+        return self.get_config().get('api', {})
+    
     def get_database_config(self) -> Dict[str, Any]:
-        """Get database configuration"""
+        """Get database configuration (legacy, now using API)"""
         return self.get_config().get('database', {})
     
     def get_systems_config(self) -> Dict[str, Any]:
