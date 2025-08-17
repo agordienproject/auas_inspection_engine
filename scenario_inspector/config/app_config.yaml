@@ -41,10 +41,11 @@ systems:
     type: "xarm_system"
 
 ftp:
-  server: "ftp://inspection-server"
-  username: "ftp_user"
-  password: "ftp_password"
-  base_path: "/aircraft"
+  server: "ftp://127.0.0.1"
+  username: "inspection_engine"
+  password: "admin"
+  base_path: "/inspections"
+  passive_mode: true  # Use passive mode for better compatibility
 
 output:
   base_directory: "scenario_inspector\\output"

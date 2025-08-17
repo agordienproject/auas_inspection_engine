@@ -29,13 +29,14 @@ from config.config_manager import ConfigManager
 from database.models import User
 from systems.system_manager import SystemManager
 from auth.login import LoginDialog
+from utils.ftp_manager import FTPManager
 
 
 class ProgramExecutionThread(QThread):
     """Thread for executing inspection programs without blocking the UI"""
     
     progress_updated = pyqtSignal(str)  # Progress message
-    execution_finished = pyqtSignal(bool)  # Success status
+    execution_finished = pyqtSignal(bool, str, object)  # Success status, inspection folder path, inspection date
     step_completed = pyqtSignal(str)  # Step name
     progress_percentage = pyqtSignal(int)  # Progress percentage for progress bar
     
@@ -46,6 +47,8 @@ class ProgramExecutionThread(QThread):
         self.config_manager = config_manager
         self.system_manager = SystemManager(config_manager)
         self.logger = logging.getLogger(__name__)
+        self.inspection_folder = None
+        self.inspection_date = None
         
     def run(self):
         """Execute program in thread"""
@@ -58,8 +61,9 @@ class ProgramExecutionThread(QThread):
                 'piece_info': self.piece_info
             }
             
-            inspection_folder = self.system_manager.create_inspection_folder(program_data_for_folder)
-            self.progress_updated.emit(f"Created inspection folder: {os.path.basename(inspection_folder)}")
+            self.inspection_folder = self.system_manager.create_inspection_folder(program_data_for_folder)
+            self.inspection_date = datetime.now()
+            self.progress_updated.emit(f"Created inspection folder: {os.path.basename(self.inspection_folder)}")
             
             # Get program stages
             stages = self.program_data.get('program', {}).get('stages', [])
@@ -92,12 +96,12 @@ class ProgramExecutionThread(QThread):
             
             self.progress_updated.emit("Program execution completed successfully!")
             self.progress_percentage.emit(100)
-            self.execution_finished.emit(True)
+            self.execution_finished.emit(True, self.inspection_folder or "", self.inspection_date)
             
         except Exception as e:
             self.logger.error(f"Program execution error: {e}")
             self.progress_updated.emit(f"Execution failed: {str(e)}")
-            self.execution_finished.emit(False)
+            self.execution_finished.emit(False, self.inspection_folder or "", self.inspection_date)
         finally:
             # Cleanup systems
             self.system_manager.shutdown_all_systems()
@@ -123,7 +127,7 @@ class ProgramExecutionThread(QThread):
                 
             except Exception as e:
                 self.progress_updated.emit(f"Step {step_name} failed: {str(e)}")
-                self.execution_finished.emit(False)
+                self.execution_finished.emit(False, self.inspection_folder or "", self.inspection_date)
                 raise
                 
         return completed
@@ -170,7 +174,7 @@ class ProgramExecutionThread(QThread):
                     else:
                         # If any step fails, we should stop execution
                         self.progress_updated.emit(f"Parallel execution failed: {error_msg}")
-                        self.execution_finished.emit(False)
+                        self.execution_finished.emit(False, self.inspection_folder or "", self.inspection_date)
                         raise Exception(error_msg)
                         
                 except Exception as e:
@@ -383,6 +387,34 @@ class InspectionMainWindow(QMainWindow):
         progress_layout.addWidget(self.progress_text)
         
         layout.addWidget(progress_group)
+        
+        # Inspection Results group
+        results_group = QGroupBox("Inspection Results")
+        results_layout = QVBoxLayout(results_group)
+        
+        # Last inspection path
+        self.last_inspection_path_label = QLabel("No inspection completed yet")
+        self.last_inspection_path_label.setStyleSheet("font-style: italic; color: gray;")
+        results_layout.addWidget(self.last_inspection_path_label)
+        
+        # Upload to FTP button
+        upload_layout = QHBoxLayout()
+        
+        self.ftp_upload_btn = QPushButton("📤 Upload to FTP Server")
+        self.ftp_upload_btn.clicked.connect(self.upload_inspection_to_ftp)
+        self.ftp_upload_btn.setEnabled(False)
+        self.ftp_upload_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #4CAF50; color: white; }")
+        upload_layout.addWidget(self.ftp_upload_btn)
+        
+        # Open folder button
+        self.open_folder_btn = QPushButton("📁 Open Folder")
+        self.open_folder_btn.clicked.connect(self.open_inspection_folder)
+        self.open_folder_btn.setEnabled(False)
+        self.open_folder_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #FF9800; color: white; }")
+        upload_layout.addWidget(self.open_folder_btn)
+        
+        results_layout.addLayout(upload_layout)
+        layout.addWidget(results_group)
         
         self.tab_widget.addTab(exec_widget, "Execution")
         
@@ -666,6 +698,43 @@ class InspectionMainWindow(QMainWindow):
         
         scroll_layout.addWidget(output_group)
         
+        # FTP Settings
+        ftp_group = QGroupBox("FTP Configuration")
+        ftp_layout = QGridLayout(ftp_group)
+        
+        ftp_config = self.config_manager.get_config().get('ftp', {})
+        
+        ftp_layout.addWidget(QLabel("FTP Server:"), 0, 0)
+        self.settings_widgets['ftp_server'] = QLineEdit(str(ftp_config.get('server', 'ftp://127.0.0.1')))
+        ftp_layout.addWidget(self.settings_widgets['ftp_server'], 0, 1)
+        
+        ftp_layout.addWidget(QLabel("Username:"), 1, 0)
+        self.settings_widgets['ftp_username'] = QLineEdit(str(ftp_config.get('username', 'anonymous')))
+        ftp_layout.addWidget(self.settings_widgets['ftp_username'], 1, 1)
+        
+        ftp_layout.addWidget(QLabel("Password:"), 2, 0)
+        self.settings_widgets['ftp_password'] = QLineEdit(str(ftp_config.get('password', '')))
+        self.settings_widgets['ftp_password'].setEchoMode(QLineEdit.Password)
+        ftp_layout.addWidget(self.settings_widgets['ftp_password'], 2, 1)
+        
+        ftp_layout.addWidget(QLabel("Base Path:"), 3, 0)
+        self.settings_widgets['ftp_base_path'] = QLineEdit(str(ftp_config.get('base_path', '/inspections')))
+        ftp_layout.addWidget(self.settings_widgets['ftp_base_path'], 3, 1)
+        
+        # Passive mode option
+        ftp_layout.addWidget(QLabel("Passive Mode:"), 4, 0)
+        self.settings_widgets['ftp_passive_mode'] = QCheckBox("Use passive mode (recommended)")
+        self.settings_widgets['ftp_passive_mode'].setChecked(ftp_config.get('passive_mode', True))
+        ftp_layout.addWidget(self.settings_widgets['ftp_passive_mode'], 4, 1)
+        
+        # FTP test connection button
+        ftp_test_btn = QPushButton("🔗 Test FTP Connection")
+        ftp_test_btn.clicked.connect(self.test_ftp_connection)
+        ftp_test_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #2196F3; color: white; }")
+        ftp_layout.addWidget(ftp_test_btn, 5, 0, 1, 2)
+        
+        scroll_layout.addWidget(ftp_group)
+        
         # Logging Settings
         logging_group = QGroupBox("Logging Configuration")
         logging_layout = QGridLayout(logging_group)
@@ -799,6 +868,17 @@ class InspectionMainWindow(QMainWindow):
             config['output']['inspection_folder_prefix'] = self.settings_widgets['output_inspection_folder_prefix'].text()
             config['output']['date_format'] = self.settings_widgets['output_date_format'].text()
             config['output']['time_format'] = self.settings_widgets['output_time_format'].text()
+            
+            # FTP settings
+            if 'ftp' not in config:
+                config['ftp'] = {}
+            config['ftp']['server'] = self.settings_widgets['ftp_server'].text()
+            config['ftp']['username'] = self.settings_widgets['ftp_username'].text()
+            config['ftp']['password'] = self.settings_widgets['ftp_password'].text()
+            config['ftp']['base_path'] = self.settings_widgets['ftp_base_path'].text()
+            config['ftp']['passive_mode'] = self.settings_widgets['ftp_passive_mode'].isChecked()
+            config['ftp']['passive_mode'] = self.settings_widgets['ftp_passive_mode'].isChecked()
+            config['ftp']['tls_mode'] = self.settings_widgets['ftp_tls_mode'].currentText()
             
             # Logging settings
             if 'logging' not in config:
@@ -1354,11 +1434,33 @@ class InspectionMainWindow(QMainWindow):
         """Handle step completion"""
         self.update_progress(f"✓ Step completed: {step_name}")
         
-    def execution_finished(self, success):
+    def execution_finished(self, success, inspection_folder="", inspection_date=None):
         """Handle execution completion"""
         # Re-enable start button, disable stop button
         self.start_execution_btn.setEnabled(True)
         self.stop_execution_btn.setEnabled(False)
+        
+        # Store inspection folder and date for FTP upload
+        if inspection_folder and os.path.exists(inspection_folder):
+            self.last_inspection_folder = inspection_folder
+            self.last_inspection_date = inspection_date or datetime.now()
+            
+            # Update the label to show the folder path
+            folder_name = os.path.basename(inspection_folder)
+            self.last_inspection_path_label.setText(f"📁 Last inspection: {folder_name}")
+            self.last_inspection_path_label.setStyleSheet("font-weight: bold; color: green;")
+            
+            # Enable upload and open folder buttons
+            self.ftp_upload_btn.setEnabled(True)
+            self.open_folder_btn.setEnabled(True)
+        else:
+            # Reset if no valid folder
+            self.last_inspection_folder = None
+            self.last_inspection_date = None
+            self.last_inspection_path_label.setText("No inspection completed yet")
+            self.last_inspection_path_label.setStyleSheet("font-style: italic; color: gray;")
+            self.ftp_upload_btn.setEnabled(False)
+            self.open_folder_btn.setEnabled(False)
         
         if success:
             self.update_progress("✓ Program execution completed successfully!")
@@ -1434,6 +1536,123 @@ class InspectionMainWindow(QMainWindow):
             else:
                 self.api_status_label.setText("⚠️ Guest Mode | API connection: DISABLED")
                 self.api_status_label.setStyleSheet("color: orange; font-weight: bold;")
+    
+    def test_ftp_connection(self):
+        """Test FTP connection using current settings"""
+        try:
+            # Get current FTP settings from widgets
+            ftp_config = {
+                'server': self.settings_widgets['ftp_server'].text(),
+                'username': self.settings_widgets['ftp_username'].text(),
+                'password': self.settings_widgets['ftp_password'].text(),
+                'base_path': self.settings_widgets['ftp_base_path'].text(),
+                'passive_mode': self.settings_widgets['ftp_passive_mode'].isChecked()
+            }
+            
+            # Create FTP manager and test connection
+            ftp_manager = FTPManager(ftp_config)
+            result = ftp_manager.test_connection()
+            
+            if result['success']:
+                QMessageBox.information(
+                    self, 
+                    "FTP Connection Test", 
+                    f"✅ {result['message']}\n\nDetails:\n"
+                    f"• Host: {result['details']['host']}:{result['details']['port']}\n"
+                    f"• Base Path: {result['details']['base_path']}\n"
+                    f"• Encryption: {result['details']['encryption']}\n"
+                    f"• Files in root: {result['details']['files_in_root']}"
+                )
+            else:
+                QMessageBox.warning(
+                    self, 
+                    "FTP Connection Test Failed", 
+                    f"❌ {result['message']}\n\nPlease check your FTP settings and ensure the server is accessible."
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(
+                self, 
+                "FTP Test Error", 
+                f"❌ Error testing FTP connection:\n{str(e)}"
+            )
+    
+    def upload_inspection_to_ftp(self):
+        """Upload the last inspection folder to FTP server"""
+        if not hasattr(self, 'last_inspection_folder') or not self.last_inspection_folder:
+            QMessageBox.warning(self, "No Inspection", "No inspection folder available for upload.")
+            return
+        
+        if not os.path.exists(self.last_inspection_folder):
+            QMessageBox.warning(self, "Folder Not Found", f"Inspection folder not found:\n{self.last_inspection_folder}")
+            return
+        
+        try:
+            # Get FTP configuration
+            ftp_config = self.config_manager.get_config().get('ftp', {})
+            
+            if not ftp_config.get('server'):
+                QMessageBox.warning(self, "FTP Not Configured", "FTP server is not configured. Please check your settings.")
+                return
+            
+            # Disable button during upload
+            self.ftp_upload_btn.setEnabled(False)
+            self.ftp_upload_btn.setText("📤 Uploading...")
+            
+            # Create FTP manager and upload
+            ftp_manager = FTPManager(ftp_config)
+            
+            # Use the inspection date if available, otherwise current date
+            inspection_date = getattr(self, 'last_inspection_date', datetime.now())
+            
+            result = ftp_manager.upload_inspection_folder(self.last_inspection_folder, inspection_date)
+            
+            if result['success']:
+                QMessageBox.information(
+                    self, 
+                    "Upload Successful", 
+                    f"✅ {result['message']}\n\n"
+                    f"📁 FTP Path: {result['details']['ftp_path']}\n"
+                    f"📄 Uploaded {len(result['details']['uploaded_files'])} files"
+                )
+            else:
+                error_details = ""
+                if 'details' in result and 'failed_files' in result['details']:
+                    failed_count = len(result['details']['failed_files'])
+                    error_details = f"\n\n❌ {failed_count} files failed to upload"
+                
+                QMessageBox.warning(
+                    self, 
+                    "Upload Failed", 
+                    f"❌ {result['message']}{error_details}"
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(
+                self, 
+                "Upload Error", 
+                f"❌ Error during FTP upload:\n{str(e)}"
+            )
+        finally:
+            # Re-enable button
+            self.ftp_upload_btn.setEnabled(True)
+            self.ftp_upload_btn.setText("📤 Upload to FTP Server")
+    
+    def open_inspection_folder(self):
+        """Open the last inspection folder in file explorer"""
+        if not hasattr(self, 'last_inspection_folder') or not self.last_inspection_folder:
+            QMessageBox.warning(self, "No Inspection", "No inspection folder available.")
+            return
+        
+        if not os.path.exists(self.last_inspection_folder):
+            QMessageBox.warning(self, "Folder Not Found", f"Inspection folder not found:\n{self.last_inspection_folder}")
+            return
+        
+        try:
+            # Open folder in Windows Explorer
+            os.startfile(self.last_inspection_folder)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to open folder:\n{str(e)}")
     
     def update_database_status_display(self):
         """Update the database status display (legacy, now shows API status)"""
