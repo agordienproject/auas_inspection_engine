@@ -45,66 +45,39 @@ class ProgramExecutionThread(QThread):
         self.program_data = program_data
         self.piece_info = piece_info
         self.config_manager = config_manager
-        self.system_manager = SystemManager(config_manager)
         self.logger = logging.getLogger(__name__)
+        
+        # Use ScenarioEngine instead of direct SystemManager
+        from inspector.scenario_engine import ScenarioEngine
+        self.scenario_engine = ScenarioEngine(config_manager, self._emit_progress)
+        
         self.inspection_folder = None
         self.inspection_date = None
-        
+    
+    def _emit_progress(self, message: str):
+        """Emit progress update to GUI"""
+        self.progress_updated.emit(message)
+    
     def run(self):
         """Execute program in thread"""
         try:
-            self.progress_updated.emit("Starting program execution...")
+            # Execute scenario using ScenarioEngine
+            success = self.scenario_engine.execute_scenario_from_gui(self.program_data, self.piece_info)
             
-            # Create inspection folder before starting execution
-            program_data_for_folder = {
-                'name': self.program_data.get('program', {}).get('name', 'unknown_program'),
-                'piece_info': self.piece_info
-            }
+            # Get results from scenario engine
+            self.inspection_folder = self.scenario_engine.current_inspection_folder
+            self.inspection_date = self.scenario_engine.current_inspection_date
             
-            self.inspection_folder = self.system_manager.create_inspection_folder(program_data_for_folder)
-            self.inspection_date = datetime.now()
-            self.progress_updated.emit(f"Created inspection folder: {os.path.basename(self.inspection_folder)}")
-            
-            # Get program stages
-            stages = self.program_data.get('program', {}).get('stages', [])
-            total_steps = sum(len(stage.get('steps', [])) for stage in stages)
-            completed_steps = 0
-            
-            # Initialize progress
-            self.progress_percentage.emit(0)
-            
-            for stage in stages:
-                stage_name = stage.get('name', f"Stage {stage.get('stage', 'Unknown')}")
-                together = stage.get('together', False)
-                
-                self.progress_updated.emit(f"Executing stage: {stage_name} {'(parallel)' if together else '(sequential)'}")
-                
-                # Execute steps in stage
-                steps = stage.get('steps', [])
-                
-                if together and len(steps) > 1:
-                    # Execute steps in parallel
-                    completed_steps += self._execute_steps_parallel(steps, stage_name, completed_steps, total_steps)
-                else:
-                    # Execute steps sequentially 
-                    completed_steps += self._execute_steps_sequential(steps, completed_steps, total_steps)
-                
-                # Update progress
-                progress_percent = int((completed_steps / total_steps) * 100) if total_steps > 0 else 100
-                self.progress_percentage.emit(progress_percent)
-                self.progress_updated.emit(f"Stage '{stage_name}' completed. Progress: {progress_percent}% ({completed_steps}/{total_steps})")
-            
-            self.progress_updated.emit("Program execution completed successfully!")
-            self.progress_percentage.emit(100)
-            self.execution_finished.emit(True, self.inspection_folder or "", self.inspection_date)
+            if success:
+                self.progress_percentage.emit(100)
+                self.execution_finished.emit(True, self.inspection_folder or "", self.inspection_date)
+            else:
+                self.execution_finished.emit(False, self.inspection_folder or "", self.inspection_date)
             
         except Exception as e:
             self.logger.error(f"Program execution error: {e}")
             self.progress_updated.emit(f"Execution failed: {str(e)}")
             self.execution_finished.emit(False, self.inspection_folder or "", self.inspection_date)
-        finally:
-            # Cleanup systems
-            self.system_manager.shutdown_all_systems()
     
     def _execute_steps_sequential(self, steps, current_completed, total_steps):
         """Execute steps one after another"""
@@ -115,8 +88,23 @@ class ProgramExecutionThread(QThread):
             
             self.progress_updated.emit(f"Executing step: {step_name} on system: {system}")
             
+            start_time = datetime.now()
             try:
                 result = self.system_manager.execute_step(step)
+                end_time = datetime.now()
+                
+                # Store execution result
+                step_result = {
+                    'name': step_name,
+                    'system': system,
+                    'success': True,
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'duration': (end_time - start_time).total_seconds(),
+                    'result': result
+                }
+                self.execution_results.append(step_result)
+                
                 self.step_completed.emit(step_name)
                 completed += 1
                 
@@ -126,6 +114,20 @@ class ProgramExecutionThread(QThread):
                 self.progress_percentage.emit(progress_percent)
                 
             except Exception as e:
+                end_time = datetime.now()
+                
+                # Store failed execution result
+                step_result = {
+                    'name': step_name,
+                    'system': system,
+                    'success': False,
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'duration': (end_time - start_time).total_seconds(),
+                    'error': str(e)
+                }
+                self.execution_results.append(step_result)
+                
                 self.progress_updated.emit(f"Step {step_name} failed: {str(e)}")
                 self.execution_finished.emit(False, self.inspection_folder or "", self.inspection_date)
                 raise
@@ -140,18 +142,44 @@ class ProgramExecutionThread(QThread):
             """Execute a single step - to be run in thread"""
             step_name = step.get('name', f"Step {step.get('step', 'Unknown')}")
             system = step.get('system')
+            start_time = datetime.now()
             
             try:
                 self.progress_updated.emit(f"[Parallel] Starting step: {step_name} on system: {system}")
                 result = self.system_manager.execute_step(step)
+                end_time = datetime.now()
+                
                 self.step_completed.emit(step_name)
                 self.progress_updated.emit(f"[Parallel] Completed step: {step_name}")
-                return step_name, True, None
+                
+                # Return step result data
+                step_result = {
+                    'name': step_name,
+                    'system': system,
+                    'success': True,
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'duration': (end_time - start_time).total_seconds(),
+                    'result': result
+                }
+                return step_result
                 
             except Exception as e:
+                end_time = datetime.now()
                 error_msg = f"Step {step_name} failed: {str(e)}"
                 self.progress_updated.emit(f"[Parallel] {error_msg}")
-                return step_name, False, error_msg
+                
+                # Return failed step result data
+                step_result = {
+                    'name': step_name,
+                    'system': system,
+                    'success': False,
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'duration': (end_time - start_time).total_seconds(),
+                    'error': str(e)
+                }
+                return step_result
         
         # Execute steps in parallel using ThreadPoolExecutor
         self.progress_updated.emit(f"Starting {len(steps)} parallel steps in stage: {stage_name}")
@@ -164,8 +192,12 @@ class ProgramExecutionThread(QThread):
             for future in as_completed(future_to_step):
                 step = future_to_step[future]
                 try:
-                    step_name, success, error_msg = future.result()
-                    if success:
+                    step_result = future.result()
+                    
+                    # Store the execution result
+                    self.execution_results.append(step_result)
+                    
+                    if step_result['success']:
                         completed += 1
                         # Update progress bar as each parallel step completes
                         new_completed = current_completed + completed
@@ -173,9 +205,9 @@ class ProgramExecutionThread(QThread):
                         self.progress_percentage.emit(progress_percent)
                     else:
                         # If any step fails, we should stop execution
-                        self.progress_updated.emit(f"Parallel execution failed: {error_msg}")
+                        self.progress_updated.emit(f"Parallel execution failed: {step_result.get('error', 'Unknown error')}")
                         self.execution_finished.emit(False, self.inspection_folder or "", self.inspection_date)
-                        raise Exception(error_msg)
+                        raise Exception(step_result.get('error', 'Unknown error'))
                         
                 except Exception as e:
                     step_name = step.get('name', 'Unknown')
@@ -184,6 +216,50 @@ class ProgramExecutionThread(QThread):
         
         self.progress_updated.emit(f"All {len(steps)} parallel steps completed successfully")
         return completed
+
+    def _create_inspection_report(self):
+        """Create inspection report using the file manager"""
+        if not self.inspection_folder or not self.execution_results:
+            self.logger.warning("Cannot create inspection report: missing inspection folder or execution results")
+            self.logger.debug(f"Inspection folder: {self.inspection_folder}")
+            self.logger.debug(f"Execution results count: {len(self.execution_results) if self.execution_results else 0}")
+            return
+        
+        try:
+            # Prepare report data
+            program = self.program_data.get('program', {})
+            program_name = program.get('name', 'Unknown')
+            piece_name = self.piece_info.get('name_piece', 'Unknown')
+            ref_piece = self.piece_info.get('ref_piece', 'Unknown')
+            
+            # Use guest user info or actual user info
+            inspector_name = "Guest User"  # Default for guest mode
+            
+            self.logger.debug(f"Creating report for {len(self.execution_results)} steps")
+            
+            report_data = {
+                'program_name': program_name,
+                'piece_name': piece_name,
+                'ref_piece': ref_piece,
+                'inspection_date': self.inspection_date.strftime('%Y-%m-%d %H:%M:%S') if self.inspection_date else 'Unknown',
+                'inspector': inspector_name,
+                'steps': self.execution_results
+            }
+            
+            # Create the report using the file manager
+            report_path = self.system_manager.file_manager.create_inspection_report(
+                self.inspection_folder, report_data
+            )
+            
+            if report_path:
+                self.progress_updated.emit(f"Inspection report created: {os.path.basename(report_path)}")
+                self.logger.info(f"Inspection report created at: {report_path}")
+            else:
+                self.logger.warning("Failed to create inspection report")
+                
+        except Exception as e:
+            self.logger.error(f"Error creating inspection report: {e}")
+            self.progress_updated.emit(f"Warning: Failed to create inspection report: {str(e)}")
 
 
 class InspectionMainWindow(QMainWindow):

@@ -48,14 +48,14 @@ ftp:
   passive_mode: true  # Use passive mode for better compatibility
 
 output:
-  base_directory: "scenario_inspector\\output"
+  base_directory: "output"
   inspection_folder_prefix: "inspection_"
   date_format: "%Y-%m-%d"
   time_format: "%Y%m%d_%H%M%S"
 
 logging:
   level: "DEBUG"
-  log_folder_path: "scenario_inspector\\logs"
+  log_folder_path: "logs"
   log_file_prefix: "scenario_inspector"
   console: true
 

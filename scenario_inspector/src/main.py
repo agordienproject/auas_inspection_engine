@@ -35,8 +35,12 @@ def setup_logging():
     date_folder = now.strftime("%Y-%m-%d")
     timestamp = now.strftime("%Y%m%d_%H%M%S")  # New format: YYYYMMDD_HHMMSS
     
-    # Construct the full log directory path
-    daily_log_dir = os.path.join(log_folder_path, date_folder)
+    # Get the project root directory (parent of src)
+    current_dir = os.path.dirname(os.path.abspath(__file__))  # src directory
+    project_root = os.path.dirname(current_dir)  # scenario_inspector directory
+    
+    # Construct the full log directory path relative to project root
+    daily_log_dir = os.path.join(project_root, log_folder_path, date_folder)
     
     # Create the daily log directory if it doesn't exist
     os.makedirs(daily_log_dir, exist_ok=True)
