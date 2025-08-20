@@ -121,7 +121,7 @@ class APIConnection:
             self.logger.debug(f"Authentication response headers: {dict(response.headers)}")
             self.logger.debug(f"Authentication response time: {response.elapsed.total_seconds():.3f}s")
             
-            if response.status_code == 200:
+            if response.status_code == 200 or response.status_code == 201:
                 auth_data = response.json()
                 self.logger.debug(f"Authentication successful, response keys: {list(auth_data.keys())}")
                 

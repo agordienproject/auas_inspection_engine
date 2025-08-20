@@ -482,6 +482,13 @@ class InspectionMainWindow(QMainWindow):
         self.ftp_upload_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #4CAF50; color: white; }")
         upload_layout.addWidget(self.ftp_upload_btn)
         
+        # Save to Database button
+        self.db_save_btn = QPushButton("💾 Save to Database")
+        self.db_save_btn.clicked.connect(self.save_inspection_to_database)
+        self.db_save_btn.setEnabled(False)
+        self.db_save_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #2196F3; color: white; }")
+        upload_layout.addWidget(self.db_save_btn)
+        
         # Open folder button
         self.open_folder_btn = QPushButton("📁 Open Folder")
         self.open_folder_btn.clicked.connect(self.open_inspection_folder)
@@ -1462,6 +1469,11 @@ class InspectionMainWindow(QMainWindow):
         self.start_execution_btn.setEnabled(False)
         self.stop_execution_btn.setEnabled(True)
         
+        # Store inspection metadata for later database save
+        self.last_piece_name = self.piece_info.get('name_piece', 'Unknown')
+        self.last_ref_piece = self.piece_info.get('ref_piece', 'Unknown')
+        self.last_program_name = self.current_program.get('program', {}).get('name', 'Unknown')
+        
         # Clear progress
         self.progress_text.clear()
         self.progress_bar.setValue(0)
@@ -1528,6 +1540,7 @@ class InspectionMainWindow(QMainWindow):
             
             # Enable upload and open folder buttons
             self.ftp_upload_btn.setEnabled(True)
+            self.db_save_btn.setEnabled(True)
             self.open_folder_btn.setEnabled(True)
         else:
             # Reset if no valid folder
@@ -1536,6 +1549,7 @@ class InspectionMainWindow(QMainWindow):
             self.last_inspection_path_label.setText("No inspection completed yet")
             self.last_inspection_path_label.setStyleSheet("font-style: italic; color: gray;")
             self.ftp_upload_btn.setEnabled(False)
+            self.db_save_btn.setEnabled(False)
             self.open_folder_btn.setEnabled(False)
         
         if success:
@@ -1684,6 +1698,9 @@ class InspectionMainWindow(QMainWindow):
             result = ftp_manager.upload_inspection_folder(self.last_inspection_folder, inspection_date)
             
             if result['success']:
+                # Store FTP path for database save
+                self.last_ftp_path = result['details']['ftp_path']
+                
                 QMessageBox.information(
                     self, 
                     "Upload Successful", 
@@ -1713,6 +1730,121 @@ class InspectionMainWindow(QMainWindow):
             # Re-enable button
             self.ftp_upload_btn.setEnabled(True)
             self.ftp_upload_btn.setText("📤 Upload to FTP Server")
+    
+    def save_inspection_to_database(self):
+        """Save inspection data to database"""
+        if not hasattr(self, 'last_inspection_folder') or not self.last_inspection_folder:
+            QMessageBox.warning(self, "No Inspection", "No inspection data available to save.")
+            return
+        
+        # Check if user is logged in
+        if not self.user:
+            QMessageBox.warning(
+                self, 
+                "Login Required", 
+                "You must be logged in to save inspection data to the database."
+            )
+            return
+        
+        try:
+            # Prepare inspection data for the dialog
+            inspection_data = {
+                'piece_name': getattr(self, 'last_piece_name', 'Unknown'),
+                'ref_piece': getattr(self, 'last_ref_piece', 'Unknown'), 
+                'program_name': getattr(self, 'last_program_name', 'Unknown'),
+                'inspection_date': self.last_inspection_date.strftime('%Y-%m-%d %H:%M:%S') if self.last_inspection_date else datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'inspection_path': ''  # Will be filled after FTP upload
+            }
+            
+            # Create and show the database dialog
+            dialog = InspectionDatabaseDialog(inspection_data, self)
+            
+            # If user has uploaded to FTP, get the path
+            if hasattr(self, 'last_ftp_path') and self.last_ftp_path:
+                dialog.update_ftp_path(self.last_ftp_path)
+            
+            if dialog.exec_() == QMessageBox.Accepted:
+                form_data = dialog.get_result_data()
+                if form_data:
+                    self._send_to_database(form_data)
+                    
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Database Save Error",
+                f"❌ Error preparing database save:\n{str(e)}"
+            )
+    
+    def _send_to_database(self, inspection_data):
+        """Send inspection data to database via API"""
+        try:
+            # Disable button during save
+            self.db_save_btn.setEnabled(False)
+            self.db_save_btn.setText("💾 Saving...")
+            
+            # Import requests for API calls
+            import requests
+            
+            # Prepare the JSON payload
+            # Convert datetime to ISO format for API
+            inspection_date = inspection_data['inspection_date']
+            if isinstance(inspection_date, str):
+                # Parse the date string and convert to ISO format
+                from datetime import datetime
+                dt = datetime.strptime(inspection_date, '%Y-%m-%d %H:%M:%S')
+                iso_date = dt.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+            else:
+                iso_date = inspection_date.strftime('%Y-%m-%dT%H:%M:%S.000Z')
+            
+            payload = {
+                "name_piece": inspection_data['name_piece'],
+                "ref_piece": inspection_data['ref_piece'], 
+                "name_program": inspection_data['name_program'],
+                "state": inspection_data['state'],
+                "dents": inspection_data['dents'],
+                "corrosions": inspection_data['corrosions'],
+                "scratches": inspection_data['scratches'],
+                "details": inspection_data['details'],
+                "inspection_date": iso_date,
+                "inspection_path": inspection_data['inspection_path']
+            }
+            
+            # Use the authenticated API connection instead of creating a new session
+            if hasattr(self.user, 'api_connection') and self.user.api_connection:
+                # Use the authenticated API connection
+                api_result = self.user.api_connection.save_inspection_data(payload)
+                
+                if api_result.get('success', False):
+                    QMessageBox.information(
+                        self,
+                        "Success",
+                        "✅ Inspection data saved to database successfully!"
+                    )
+                    self.update_progress("✓ Inspection data saved to database")
+                else:
+                    error_msg = api_result.get('message', 'Unknown error')
+                    QMessageBox.critical(
+                        self,
+                        "Database Save Failed",
+                        f"❌ Failed to save to database:\n{error_msg}"
+                    )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Authentication Error",
+                    "❌ No authenticated API connection available. Please login again."
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Database Save Error",
+                f"❌ Error saving to database:\n{str(e)}"
+            )
+        finally:
+            # Re-enable button
+            self.db_save_btn.setEnabled(True)
+            self.db_save_btn.setText("💾 Save to Database")
     
     def open_inspection_folder(self):
         """Open the last inspection folder in file explorer"""
@@ -1838,3 +1970,154 @@ class InspectionMainWindow(QMainWindow):
                 event.ignore()
         else:
             event.accept()
+
+
+class InspectionDatabaseDialog(QMessageBox):
+    """Dialog for saving inspection data to database"""
+    
+    def __init__(self, inspection_data, parent=None):
+        super().__init__(parent)
+        self.inspection_data = inspection_data
+        self.result_data = None
+        
+        self.setWindowTitle("Save Inspection to Database")
+        self.setIcon(QMessageBox.Question)
+        self.setText("Please fill in the inspection details:")
+        
+        # Create custom widget for the form
+        self.setup_form()
+        
+    def setup_form(self):
+        """Setup the form fields"""
+        from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QComboBox, QCheckBox, QTextEdit
+        
+        # Create main widget
+        widget = QWidget()
+        main_layout = QVBoxLayout(widget)
+        
+        # Create form layout
+        form_layout = QFormLayout()
+        
+        # Name of piece (read-only, pre-filled)
+        self.name_piece_edit = QLineEdit(self.inspection_data.get('piece_name', ''))
+        self.name_piece_edit.setReadOnly(True)
+        self.name_piece_edit.setStyleSheet("background-color: #f0f0f0;")
+        form_layout.addRow("Piece Name:", self.name_piece_edit)
+        
+        # Reference of piece (read-only, pre-filled)
+        self.ref_piece_edit = QLineEdit(self.inspection_data.get('ref_piece', ''))
+        self.ref_piece_edit.setReadOnly(True)
+        self.ref_piece_edit.setStyleSheet("background-color: #f0f0f0;")
+        form_layout.addRow("Piece Reference:", self.ref_piece_edit)
+        
+        # Program name (read-only, pre-filled)
+        self.program_name_edit = QLineEdit(self.inspection_data.get('program_name', ''))
+        self.program_name_edit.setReadOnly(True)
+        self.program_name_edit.setStyleSheet("background-color: #f0f0f0;")
+        form_layout.addRow("Program Name:", self.program_name_edit)
+        
+        # State dropdown (user selectable)
+        self.state_combo = QComboBox()
+        self.state_combo.addItems([
+            "Perfect",
+            "Almost perfect", 
+            "Good",
+            "Average",
+            "Not good",
+            "Really bad",
+            "Destroyed"
+        ])
+        self.state_combo.setCurrentText("Good")  # Default selection
+        form_layout.addRow("State:", self.state_combo)
+        
+        # Checkboxes for conditions
+        self.dents_checkbox = QCheckBox("Has dents")
+        form_layout.addRow("Dents:", self.dents_checkbox)
+        
+        self.corrosions_checkbox = QCheckBox("Has corrosions")
+        form_layout.addRow("Corrosions:", self.corrosions_checkbox)
+        
+        self.scratches_checkbox = QCheckBox("Has scratches")
+        form_layout.addRow("Scratches:", self.scratches_checkbox)
+        
+        # Details text area (optional)
+        self.details_text = QTextEdit()
+        self.details_text.setMaximumHeight(80)
+        self.details_text.setPlaceholderText("Optional details about the inspection...")
+        form_layout.addRow("Details:", self.details_text)
+        
+        # Inspection date (read-only, pre-filled)
+        inspection_date = self.inspection_data.get('inspection_date', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        self.inspection_date_edit = QLineEdit(inspection_date)
+        self.inspection_date_edit.setReadOnly(True)
+        self.inspection_date_edit.setStyleSheet("background-color: #f0f0f0;")
+        form_layout.addRow("Inspection Date:", self.inspection_date_edit)
+        
+        # FTP path (read-only, will be filled after FTP upload)
+        self.ftp_path_edit = QLineEdit(self.inspection_data.get('inspection_path', ''))
+        self.ftp_path_edit.setReadOnly(True)
+        self.ftp_path_edit.setStyleSheet("background-color: #f0f0f0;")
+        self.ftp_path_edit.setPlaceholderText("Upload to FTP first to get the path")
+        form_layout.addRow("Inspection Path:", self.ftp_path_edit)
+        
+        main_layout.addLayout(form_layout)
+        
+        # Add custom buttons
+        button_layout = QHBoxLayout()
+        
+        self.save_btn = QPushButton("💾 Save to Database")
+        self.save_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #4CAF50; color: white; }")
+        self.save_btn.clicked.connect(self.save_to_database)
+        button_layout.addWidget(self.save_btn)
+        
+        self.cancel_btn = QPushButton("❌ Cancel")
+        self.cancel_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #f44336; color: white; }")
+        self.cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_btn)
+        
+        main_layout.addLayout(button_layout)
+        
+        # Set the custom widget as the message box's layout
+        self.layout().addWidget(widget, 1, 0, 1, self.layout().columnCount())
+        
+        # Remove default buttons
+        self.setStandardButtons(QMessageBox.NoButton)
+    
+    def update_ftp_path(self, ftp_path):
+        """Update the FTP path field after successful upload"""
+        self.ftp_path_edit.setText(ftp_path)
+    
+    def save_to_database(self):
+        """Collect form data and prepare for database save"""
+        # Validate required fields
+        if not self.name_piece_edit.text().strip():
+            QMessageBox.warning(self, "Validation Error", "Piece name is required!")
+            return
+        
+        if not self.ref_piece_edit.text().strip():
+            QMessageBox.warning(self, "Validation Error", "Piece reference is required!")
+            return
+            
+        if not self.ftp_path_edit.text().strip():
+            QMessageBox.warning(self, "Validation Error", "Please upload to FTP first to get the inspection path!")
+            return
+        
+        # Collect all form data
+        self.result_data = {
+            "name_piece": self.name_piece_edit.text().strip(),
+            "ref_piece": self.ref_piece_edit.text().strip(),
+            "name_program": self.program_name_edit.text().strip(),
+            "state": self.state_combo.currentText(),
+            "dents": self.dents_checkbox.isChecked(),
+            "corrosions": self.corrosions_checkbox.isChecked(),
+            "scratches": self.scratches_checkbox.isChecked(),
+            "details": self.details_text.toPlainText().strip(),
+            "inspection_date": self.inspection_date_edit.text(),
+            "inspection_path": self.ftp_path_edit.text().strip()
+        }
+        
+        self.accept()
+    
+    def get_result_data(self):
+        """Get the collected form data"""
+        return self.result_data
