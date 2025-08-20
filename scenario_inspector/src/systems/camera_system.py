@@ -306,9 +306,7 @@ class RealSenseCameraController:
                 else:
                     raise RuntimeError("Camera not initialized")
             
-            # Apply image enhancements if requested
-            if enhance_quality or denoise:
-                color_image = self._enhance_image_quality(color_image, denoise)
+            # Do not apply any image enhancements
             
             if filename:
                 cv2.imwrite(filename, color_image)
@@ -320,35 +318,6 @@ class RealSenseCameraController:
             self.logger.error(f"Failed to capture image: {e}")
             raise
     
-    def _enhance_image_quality(self, image, denoise=False):
-        """Apply image quality enhancements"""
-        try:
-            enhanced_image = image.copy()
-            
-            # Apply denoising if requested
-            if denoise:
-                # Non-local means denoising for color images
-                enhanced_image = cv2.fastNlMeansDenoisingColored(enhanced_image, None, 10, 10, 7, 21)
-                self.logger.info("Applied denoising filter")
-            
-            # Enhance sharpness using unsharp masking
-            gaussian = cv2.GaussianBlur(enhanced_image, (0, 0), 2.0)
-            enhanced_image = cv2.addWeighted(enhanced_image, 1.5, gaussian, -0.5, 0)
-            
-            # Enhance contrast using CLAHE (Contrast Limited Adaptive Histogram Equalization)
-            lab = cv2.cvtColor(enhanced_image, cv2.COLOR_BGR2LAB)
-            l, a, b = cv2.split(lab)
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-            l = clahe.apply(l)
-            enhanced_image = cv2.merge([l, a, b])
-            enhanced_image = cv2.cvtColor(enhanced_image, cv2.COLOR_LAB2BGR)
-            
-            self.logger.info("Applied image quality enhancements (sharpening + contrast)")
-            return enhanced_image
-            
-        except Exception as e:
-            self.logger.error(f"Failed to enhance image quality: {e}")
-            return image
     
     def capture_depth_image(self, filename: str = None):
         """Capture depth image (only available with RealSense)"""
