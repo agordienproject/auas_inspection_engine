@@ -11,6 +11,5 @@ program:
           name: "camera_depth"
           system: "camera"
           action: "capture_depth"
-          saving_file: true
           parameters:
             filename: "depth_image.png"

@@ -21,7 +21,6 @@ program:
           system: "camera"
           action: "take_video"
           recording_time: 20
-          saving_file: true
         - step: 2
           name: "gantry-load"
           system: "gantry"

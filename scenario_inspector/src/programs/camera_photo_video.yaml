@@ -11,7 +11,6 @@ program:
           name: "camera"
           system: "camera"
           action: "capture_image"
-          saving_file: true
           parameters:
             filename: "inspection_photo.jpg"
             quality: 95
@@ -23,7 +22,6 @@ program:
           name: "camera"
           system: "camera"
           action: "record_video"
-          saving_file: true
           parameters:
             filename: "inspection_video.mp4"
             duration: 10

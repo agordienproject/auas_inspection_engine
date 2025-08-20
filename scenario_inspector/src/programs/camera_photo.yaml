@@ -11,4 +11,3 @@ program:
           name: "camera"
           system: "camera"
           action: "capture_image"
-          saving_file: true
