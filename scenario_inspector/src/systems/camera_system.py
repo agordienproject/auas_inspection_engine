@@ -440,11 +440,7 @@ class RealSenseCameraController:
                         return False
                 else:
                     return False
-            
-            # Apply quality enhancements if high quality is requested
-            if self.video_quality == "high" or self.video_quality == "ultra":
-                frame = self._enhance_video_frame(frame)
-            
+
             # Write frame to video
             self.video_writer.write(frame)
             return True
@@ -469,25 +465,6 @@ class RealSenseCameraController:
         except Exception as e:
             self.logger.error(f"Error stopping video recording: {e}")
             return False
-    
-    def _enhance_video_frame(self, frame):
-        """Apply lightweight enhancements to video frames (faster than photo enhancements)"""
-        try:
-            # For video, we apply lighter processing to maintain real-time performance
-            enhanced_frame = frame.copy()
-            
-            # Light sharpening
-            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-            enhanced_frame = cv2.filter2D(enhanced_frame, -1, kernel)
-            
-            # Slight contrast enhancement
-            enhanced_frame = cv2.convertScaleAbs(enhanced_frame, alpha=1.1, beta=5)
-            
-            return enhanced_frame
-            
-        except Exception as e:
-            self.logger.error(f"Failed to enhance video frame: {e}")
-            return frame
     
     def get_camera_info(self):
         """Get camera information"""

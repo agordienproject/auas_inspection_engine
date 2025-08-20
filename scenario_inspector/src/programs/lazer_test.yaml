@@ -1,6 +1,6 @@
 program:
-  name: "lazer-picture"
-  description: "Laser scanning followed by camera capture"
+  name: "lazer_test"
+  description: "Laser scanning"
   piece_info:
     name_piece: "Landing gear"
     ref_piece: "0054-0544"
@@ -20,14 +20,3 @@ program:
           recording_time: 20
           saving_file: true
           path: "scan_data"
-          
-        - step: 2
-          name: "picture"
-          system: "camera"
-          parameters:
-            resolution: "1920x1080"
-            fps: 30
-          action: "take_video"
-          recording_time: 20
-          saving_file: true
-          path: "classic"

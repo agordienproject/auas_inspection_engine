@@ -1,5 +1,5 @@
 program:
-  name: "all_systems_test"
+  name: "camera_gantry_table_xarm"
   description: "Test to use all systems together: gantry, camera, table and xarm"
   
   stages:

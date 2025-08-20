@@ -14,7 +14,7 @@ program:
           saving_file: true
           parameters:
             filename: "ultra_quality_video.mp4"
-            duration: 15
+            duration: 5
             fps: 30
             quality: "ultra"
-            codec: "h264"
+            codec: "mp4v"
