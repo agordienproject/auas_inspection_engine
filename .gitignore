@@ -23,3 +23,5 @@ logs/
 
 # Ignore output data
 output/
+
+build/
