@@ -58,10 +58,10 @@ class AUASFTPServer:
                 f.write(f"Server started at: {self.host}:{self.port}\n")
                 f.write(f"Base directory: {self.base_path}\n")
                 
-            self.logger.info(f"✅ FTP directories created at: {self.base_path}")
+            self.logger.info(f"FTP directories created at: {self.base_path}")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to create directories: {e}")
+            self.logger.error(f"Failed to create directories: {e}")
             raise
     
     def create_server(self):
@@ -96,12 +96,12 @@ class AUASFTPServer:
             # Create server
             self.server = FTPServer((self.host, self.port), handler)
             
-            self.logger.info(f"✅ FTP Server configured")
-            self.logger.info(f"📡 Host: {self.host}")
-            self.logger.info(f"🔌 Port: {self.port}")
-            self.logger.info(f"📁 Base Path: {self.base_path}")
-            self.logger.info(f"👤 User: inspection_engine / admin")
-            self.logger.info(f"🌐 Anonymous: enabled (read-only)")
+            self.logger.info(f"FTP Server configured")
+            self.logger.info(f"Host: {self.host}")
+            self.logger.info(f"Port: {self.port}")
+            self.logger.info(f"Base Path: {self.base_path}")
+            self.logger.info(f"User: inspection_engine / admin")
+            self.logger.info(f"Anonymous: enabled (read-only)")
             
         except Exception as e:
             self.logger.error(f"❌ Failed to create server: {e}")
@@ -113,16 +113,16 @@ class AUASFTPServer:
             self.setup_directories()
             self.create_server()
             
-            self.logger.info("🚀 Starting FTP Server...")
-            self.logger.info("🔗 Connect with: ftp://127.0.0.1:21")
-            self.logger.info("⚠️  Press Ctrl+C to stop")
+            self.logger.info("Starting FTP Server...")
+            self.logger.info("Connect with: ftp://127.0.0.1:21")
+            self.logger.info("Press Ctrl+C to stop")
             
             self.server.serve_forever()
             
         except KeyboardInterrupt:
-            self.logger.info("🛑 Server stopped by user")
+            self.logger.info("Server stopped by user")
         except Exception as e:
-            self.logger.error(f"❌ Server error: {e}")
+            self.logger.error(f"Server error: {e}")
         finally:
             if self.server:
                 self.server.close_all()
@@ -131,13 +131,13 @@ class AUASFTPServer:
         """Stop the FTP server"""
         if self.server:
             self.server.close_all()
-            self.logger.info("🛑 FTP Server stopped")
+            self.logger.info("FTP Server stopped")
 
 
 
 def main():
     """Main function to start FTP server"""
-    print("🏗️ AUAS Inspection Engine - FTP Server")
+    print("AUAS Inspection Engine - FTP Server")
     print("=" * 50)
 
     # Create and start server (parameters will be loaded from .env by default)
@@ -146,7 +146,7 @@ def main():
     try:
         ftp_server.start()
     except Exception as e:
-        print(f"❌ Failed to start server: {e}")
+        print(f"Failed to start server: {e}")
         return 1
 
     return 0
