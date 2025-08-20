@@ -8,8 +8,17 @@ numpy>=1.21.0
 # Video recording (for AVI export)
 opencv-python>=4.6.0
 
+# Intel RealSense camera support (Windows)
+pyrealsense2>=2.50.0
+
+# Windows device management (optional)
+WMI>=1.5.1
+
+# Serial communication
+pyserial>=3.5
+
 # Optional: Advanced data formats
 h5py>=3.7.0  # For HDF5 export
 
 # Note: The scanCONTROL SDK (pylinllt) must be installed separately
-# from the scanCONTROL-Linux-SDK provided by Micro-Epsilon
+# from the scanCONTROL-Windows-SDK provided by Micro-Epsilon

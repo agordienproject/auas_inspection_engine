@@ -11,7 +11,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gui.main_window import InspectionMainWindow
 from config.config_manager import ConfigManager
-from auth.login import LoginDialog
 
 def setup_logging():
     """Setup logging configuration with daily folders and timestamped files"""
@@ -25,14 +24,23 @@ def setup_logging():
     log_folder_path = log_config['log_folder_path']
     log_file_prefix = log_config['log_file_prefix']
     console_logging = log_config.get('console', True)
+    debug_mode = log_config.get('debug_mode', False)
+    
+    # Override log level to DEBUG if debug_mode is enabled
+    if debug_mode:
+        log_level = logging.DEBUG
     
     # Create timestamp strings
     now = datetime.now()
     date_folder = now.strftime("%Y-%m-%d")
     timestamp = now.strftime("%Y%m%d_%H%M%S")  # New format: YYYYMMDD_HHMMSS
     
-    # Construct the full log directory path
-    daily_log_dir = os.path.join(log_folder_path, date_folder)
+    # Get the project root directory (parent of src)
+    current_dir = os.path.dirname(os.path.abspath(__file__))  # src directory
+    project_root = os.path.dirname(current_dir)  # scenario_inspector directory
+    
+    # Construct the full log directory path relative to project root
+    daily_log_dir = os.path.join(project_root, log_folder_path, date_folder)
     
     # Create the daily log directory if it doesn't exist
     os.makedirs(daily_log_dir, exist_ok=True)
@@ -55,6 +63,11 @@ def setup_logging():
     # Log the file path for reference
     logger = logging.getLogger(__name__)
     logger.info(f"Log file created: {log_file_path}")
+    
+    # Log debug mode status
+    if debug_mode:
+        logger.info("DEBUG MODE ENABLED - Enhanced API logging is active")
+        logger.debug("Debug logging level is active")
 
 def main():
     """Main entry point for the Scenario Inspector application"""
@@ -67,22 +80,11 @@ def main():
     app = QApplication(sys.argv)
     
     try:
-        # Show login dialog
-        login_dialog = LoginDialog()
-        if login_dialog.exec_() != LoginDialog.Accepted:
-            logger.info("Login cancelled by user")
-            return 0
+        # Start with guest user (no authentication required)
+        logger.info("Starting application in guest mode (no login required)")
         
-        # Get authenticated user
-        authenticated_user = login_dialog.get_authenticated_user()
-        if not authenticated_user:
-            logger.error("Authentication failed")
-            return 1
-        
-        logger.info(f"User {authenticated_user.pseudo} logged in successfully")
-        
-        # Create and show main window
-        main_window = InspectionMainWindow(authenticated_user)
+        # Create and show main window without authenticated user
+        main_window = InspectionMainWindow()
         main_window.show()
         
         # Start application event loop

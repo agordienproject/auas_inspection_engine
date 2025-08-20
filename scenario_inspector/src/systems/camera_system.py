@@ -1,824 +1,954 @@
 """
-Camera System using ROS2 connection functions from GUI application
+Camera System using Intel RealSense SDK for Windows (No ROS2)
 """
 import logging
-import subprocess
 import time
 import cv2
 import os
 import datetime
 import threading
-import signal
+import numpy as np
 from typing import Dict, Any, Optional
 
 try:
-    import rclpy
-    from rclpy.node import Node
-    from sensor_msgs.msg import Image
-    from cv_bridge import CvBridge
-    ROS2_AVAILABLE = True
+    import pyrealsense2 as rs
+    REALSENSE_AVAILABLE = True
 except ImportError:
-    ROS2_AVAILABLE = False
-    print("[WARN] ROS2 not available, camera system will use fallback mode")
+    REALSENSE_AVAILABLE = False
+    print("[WARN] Intel RealSense SDK not available, camera system will use OpenCV fallback")
 
 from systems.base_system import BaseSystem
 
 
-class ROS2CameraNode(Node):
-    """ROS2 Node for camera operations"""
-    
-    def __init__(self):
-        super().__init__('camera_system_node')
-        self.bridge = CvBridge()
-        self.current_image = None
-        self.image_subscription = None
-        self.logger = self.get_logger()
-        
-    def start_image_subscription(self):
-        """Start subscribing to camera images"""
-        try:
-            self.image_subscription = self.create_subscription(
-                Image,
-                '/camera/camera/color/image_raw',
-                self.image_callback,
-                10
-            )
-            self.logger.info("Started camera image subscription")
-        except Exception as e:
-            self.logger.error(f"Failed to start image subscription: {e}")
-            raise
-    
-    def stop_image_subscription(self):
-        """Stop subscribing to camera images"""
-        if self.image_subscription:
-            self.destroy_subscription(self.image_subscription)
-            self.image_subscription = None
-            self.logger.info("Stopped camera image subscription")
-    
-    def image_callback(self, msg):
-        """Callback for receiving camera images"""
-        try:
-            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            self.current_image = cv_image
-        except Exception as e:
-            self.logger.error(f"Failed to convert image: {e}")
-
-
-class CameraController:
-    """Controller class for camera operations using ROS2"""
+class RealSenseCameraController:
+    """Controller class for Intel RealSense camera operations"""
     
     def __init__(self):
         self.connected = False
-        self.camera_process = None
         self.capturing = False
         self.device_id = None
-        self.ros2_node = None
-        self.ros2_thread = None
-        self.ros2_initialized = False
+        self.pipeline = None
+        self.config = None
+        self.current_color_frame = None
+        self.current_depth_frame = None
+        self.logger = logging.getLogger(__name__)
         
-    def connect(self, device_id: str = "Intel Corp"):
-        """Connect to camera system"""
+        # Video recording variables
+        self.is_recording = False
+        self.video_writer = None
+        self.video_filename = None
+        self.video_fps = 30
+        self.video_quality = "medium"
+        self.video_duration = None
+        self.video_start_time = None
+        
+    def connect(self, device_id: str = "Intel Corp", resolution: str = "high"):
+        """Connect to Intel RealSense camera"""
         try:
             self.device_id = device_id
             
-            if not ROS2_AVAILABLE:
-                # Fallback to OpenCV
-                return self._connect_opencv()
-            
-            # Initialize ROS2 if not already done
-            if not self.ros2_initialized:
-                if not rclpy.ok():
-                    rclpy.init()
-                self.ros2_initialized = True
-            
-            # Test camera availability using lsusb (like in utils.py)
-            result = subprocess.run(['lsusb'], capture_output=True, text=True)
-            if "Intel Corp." in result.stdout or "RealSense" in result.stdout:
-                self.connected = True
-                return True
-            else:
-                print(f"[WARN] Camera device '{device_id}' not found in USB devices")
+            if not REALSENSE_AVAILABLE:
+                # If RealSense SDK is not available, we can't connect to RealSense cameras
+                self.logger.error("RealSense SDK not available - cannot connect to Intel RealSense camera")
                 return False
+            
+            # Initialize RealSense pipeline
+            self.pipeline = rs.pipeline()
+            self.config = rs.config()
+            
+            # Test camera availability and validate device
+            ctx = rs.context()
+            devices = ctx.query_devices()
+            
+            if len(devices) == 0:
+                self.logger.error("No RealSense devices found")
+                return False
+            
+            # Check if any of the detected devices match our required device_id
+            target_device = None
+            for device in devices:
+                device_name = device.get_info(rs.camera_info.name)
+                self.logger.info(f"Found RealSense device: {device_name}")
                 
+                # Check if this device matches our target device_id
+                if device_id in device_name:
+                    target_device = device
+                    self.logger.info(f"Target device found: {device_name}")
+                    break
+            
+            if target_device is None:
+                self.logger.error(f"Required camera device not found: {device_id}")
+                self.logger.error(f"Available devices: {[dev.get_info(rs.camera_info.name) for dev in devices]}")
+                return False
+            
+            # Configure streams based on resolution setting
+            if resolution == "ultra":
+                # Ultra high resolution - 1920x1080
+                self.config.enable_stream(rs.stream.color, 1920, 1080, rs.format.bgr8, 30)
+                self.config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
+            elif resolution == "high":
+                # High resolution - 1280x720
+                self.config.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
+                self.config.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
+            elif resolution == "medium":
+                # Medium resolution - 848x480
+                self.config.enable_stream(rs.stream.color, 848, 480, rs.format.bgr8, 30)
+                self.config.enable_stream(rs.stream.depth, 848, 480, rs.format.z16, 30)
+            else:
+                # Standard resolution - 640x480
+                self.config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+                self.config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+            
+            # Enable the specific device we want to use
+            self.config.enable_device(target_device.get_info(rs.camera_info.serial_number))
+            
+            # Start streaming
+            profile = self.pipeline.start(self.config)
+            
+            # Configure camera settings for better quality
+            try:
+                # Get the color sensor
+                color_sensor = profile.get_device().first_color_sensor()
+                
+                # Enable auto-exposure initially
+                color_sensor.set_option(rs.option.enable_auto_exposure, 1)
+                
+                # Set high gain for better low-light performance
+                if color_sensor.supports(rs.option.gain):
+                    color_sensor.set_option(rs.option.gain, 32)  # Adjust as needed
+                
+                # Set manual white balance for more consistent colors
+                if color_sensor.supports(rs.option.enable_auto_white_balance):
+                    color_sensor.set_option(rs.option.enable_auto_white_balance, 0)
+                    if color_sensor.supports(rs.option.white_balance):
+                        color_sensor.set_option(rs.option.white_balance, 4600)  # Daylight temperature
+                
+                self.logger.info("Applied camera quality settings")
+            except Exception as e:
+                self.logger.warning(f"Could not set camera quality settings: {e}")
+            
+            self.connected = True
+            self.logger.info(f"Successfully connected to RealSense camera: {target_device.get_info(rs.camera_info.name)}")
+            return True
+            
         except Exception as e:
-            self.connected = False
-            raise e
+            self.logger.error(f"Failed to connect to RealSense camera: {e}")
+            return False
     
-    def _connect_opencv(self):
+    def _connect_opencv(self, resolution: str = "high"):
         """Fallback connection using OpenCV"""
-        cap = cv2.VideoCapture(0)
-        if cap.isOpened():
-            ret, frame = cap.read()
-            cap.release()
-            if ret:
-                self.connected = True
-                return True
-        return False
+        try:
+            # Try to find any available camera
+            for i in range(5):  # Check first 5 camera indices
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    # Set resolution based on setting
+                    if resolution == "ultra":
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                    elif resolution == "high":
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                    elif resolution == "medium":
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 848)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                    else:
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                    
+                    cap.release()
+                    self.connected = True
+                    self.camera_index = i
+                    self.camera_resolution = resolution
+                    self.logger.info(f"Connected to camera using OpenCV (index {i}, resolution: {resolution})")
+                    return True
+            
+            self.logger.error("No cameras found using OpenCV")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"OpenCV camera connection failed: {e}")
+            return False
     
     def disconnect(self):
         """Disconnect from camera"""
         try:
             self.stop_camera()
-            if self.ros2_node:
-                self.ros2_node.destroy_node()
-                self.ros2_node = None
+            if self.pipeline:
+                self.pipeline.stop()
+                self.pipeline = None
             
             self.connected = False
             return True
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"Error disconnecting camera: {e}")
             self.connected = False
             return False
     
     def start_camera(self):
-        """Start camera capture using ROS2"""
+        """Start camera capture"""
         if not self.connected:
             raise ConnectionError("Camera not connected")
         
         try:
-            if not ROS2_AVAILABLE:
+            if REALSENSE_AVAILABLE and self.pipeline:
+                # RealSense is already streaming from connect()
+                self.capturing = True
+                self.logger.info("RealSense camera streaming started")
+                return True
+            else:
+                # Use OpenCV fallback
                 return self._start_camera_opencv()
-            
-            # First, ensure no existing camera processes are running
-            self._cleanup_existing_camera_processes()
-            
-            # Launch RealSense camera via ROS2 (similar to GUI implementation)
-            cmd = [
-                "bash", "-c",
-                "source /opt/ros/humble/setup.bash && ros2 launch realsense2_camera rs_launch.py"
-            ]
-            
-            self.camera_process = subprocess.Popen(cmd, preexec_fn=os.setsid)
-            
-            # Give time for camera to start
-            time.sleep(3)
-            
-            # Create ROS2 node for image subscription
-            if not self.ros2_node:
-                self.ros2_node = ROS2CameraNode()
                 
-                # Start spinning the node in a separate thread
-                self.ros2_thread = threading.Thread(target=self._spin_ros2_node)
-                self.ros2_thread.daemon = True
-                self.ros2_thread.start()
-            
-            # Start image subscription
-            self.ros2_node.start_image_subscription()
-            
-            # Wait a bit more for subscription to be ready
-            time.sleep(2)
-            
-            self.capturing = True
-            return True
-            
         except Exception as e:
-            self.capturing = False
-            raise RuntimeError(f"Failed to start camera: {e}")
-    
-    def _cleanup_existing_camera_processes(self):
-        """Clean up any existing camera processes"""
-        try:
-            # Kill any existing RealSense processes
-            subprocess.run([
-                "pkill", "-f", "realsense2_camera_node"
-            ], check=False)
-            
-            subprocess.run([
-                "pkill", "-f", "ros2 launch realsense2_camera"
-            ], check=False)
-            
-            # Wait for processes to clean up
-            time.sleep(2)
-            
-        except Exception as e:
-            print(f"[WARN] Error cleaning up camera processes: {e}")
+            self.logger.error(f"Failed to start camera: {e}")
+            return False
     
     def _start_camera_opencv(self):
-        """Fallback start using OpenCV"""
-        self.capturing = True
-        return True
-    
-    def _spin_ros2_node(self):
-        """Spin the ROS2 node in a separate thread"""
+        """Start camera using OpenCV fallback"""
         try:
-            rclpy.spin(self.ros2_node)
+            self.cap = cv2.VideoCapture(getattr(self, 'camera_index', 0))
+            if self.cap.isOpened():
+                # Apply resolution settings
+                resolution = getattr(self, 'camera_resolution', 'high')
+                if resolution == "ultra":
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                elif resolution == "high":
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                elif resolution == "medium":
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 848)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                else:
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                
+                # Set additional quality settings
+                self.cap.set(cv2.CAP_PROP_FPS, 30)
+                
+                self.capturing = True
+                actual_width = self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                actual_height = self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                self.logger.info(f"OpenCV camera streaming started - Resolution: {actual_width}x{actual_height}")
+                return True
+            return False
         except Exception as e:
-            print(f"[ERROR] ROS2 spinning error: {e}")
+            self.logger.error(f"Failed to start OpenCV camera: {e}")
+            return False
     
     def stop_camera(self):
         """Stop camera capture"""
         try:
-            # Stop ROS2 subscription
-            if self.ros2_node:
-                self.ros2_node.stop_image_subscription()
-            
-            # Kill the ROS2 camera process
-            if self.camera_process:
-                try:
-                    # Kill the process group
-                    os.killpg(os.getpgid(self.camera_process.pid), signal.SIGTERM)
-                    # Wait a bit for graceful shutdown
-                    time.sleep(1)
-                    # Force kill if still running
-                    os.killpg(os.getpgid(self.camera_process.pid), signal.SIGKILL)
-                except ProcessLookupError:
-                    pass  # Process already terminated
-                except Exception:
-                    pass  # Ignore other errors
-                
-                self.camera_process = None
-            
-            # Kill any remaining RealSense processes more aggressively
-            subprocess.run([
-                "pkill", "-f", "realsense2_camera_node"
-            ], check=False)
-            
-            subprocess.run([
-                "pkill", "-f", "ros2 launch realsense2_camera"
-            ], check=False)
-            
-            # Wait a moment for processes to clean up
-            time.sleep(2)
-            
             self.capturing = False
+            if hasattr(self, 'cap'):
+                self.cap.release()
+                delattr(self, 'cap')
+            self.logger.info("Camera streaming stopped")
             return True
-            
         except Exception as e:
-            print(f"[WARN] Error stopping camera: {e}")
-            self.capturing = False
+            self.logger.error(f"Error stopping camera: {e}")
             return False
     
-    def capture_image(self, output_path: str = None):
-        """Capture a single image from ROS2 camera feed"""
+    def capture_image(self, filename: str = None, enhance_quality: bool = False, denoise: bool = False):
+        """Capture a single image with optional quality enhancements"""
         if not self.capturing:
             raise RuntimeError("Camera not capturing")
         
         try:
-            if not ROS2_AVAILABLE or not self.ros2_node:
-                # Fallback to OpenCV capture
-                return self._capture_image_opencv(output_path)
+            if REALSENSE_AVAILABLE and self.pipeline:
+                # Capture multiple frames and average them for better quality
+                frames_to_average = 3 if enhance_quality else 1
+                images = []
+                
+                for _ in range(frames_to_average):
+                    frames = self.pipeline.wait_for_frames()
+                    color_frame = frames.get_color_frame()
+                    
+                    if not color_frame:
+                        raise RuntimeError("Failed to capture color frame")
+                    
+                    # Convert to numpy array
+                    color_image = np.asanyarray(color_frame.get_data())
+                    images.append(color_image)
+                    
+                    if frames_to_average > 1:
+                        time.sleep(0.1)  # Small delay between captures
+                
+                # Average multiple frames to reduce noise
+                if len(images) > 1:
+                    color_image = np.mean(images, axis=0).astype(np.uint8)
+                    self.logger.info(f"Averaged {len(images)} frames for noise reduction")
+                else:
+                    color_image = images[0]
+                
+            else:
+                # Use OpenCV fallback with frame averaging
+                if hasattr(self, 'cap'):
+                    frames_to_average = 3 if enhance_quality else 1
+                    images = []
+                    
+                    for _ in range(frames_to_average):
+                        ret, frame = self.cap.read()
+                        if ret:
+                            images.append(frame)
+                            if frames_to_average > 1:
+                                time.sleep(0.1)
+                    
+                    if not images:
+                        raise RuntimeError("Failed to capture frame")
+                    
+                    # Average frames if multiple captured
+                    if len(images) > 1:
+                        color_image = np.mean(images, axis=0).astype(np.uint8)
+                    else:
+                        color_image = images[0]
+                else:
+                    raise RuntimeError("Camera not initialized")
             
-            # Wait for image from ROS2 subscription
-            max_wait_time = 5.0  # seconds
-            wait_interval = 0.1
-            waited = 0.0
+            # Do not apply any image enhancements
             
-            while self.ros2_node.current_image is None and waited < max_wait_time:
-                time.sleep(wait_interval)
-                waited += wait_interval
+            if filename:
+                cv2.imwrite(filename, color_image)
+                self.logger.info(f"Image saved to {filename}")
             
-            if self.ros2_node.current_image is None:
-                raise RuntimeError("No image received from camera within timeout")
+            return color_image
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to capture image: {e}")
+            raise
+    
+    
+    def capture_depth_image(self, filename: str = None):
+        """Capture depth image (only available with RealSense)"""
+        if not self.capturing:
+            raise RuntimeError("Camera not capturing")
+        
+        if not REALSENSE_AVAILABLE or not self.pipeline:
+            raise RuntimeError("Depth capture requires Intel RealSense camera. Current camera does not support depth sensing.")
+        
+        try:
+            frames = self.pipeline.wait_for_frames()
+            depth_frame = frames.get_depth_frame()
             
-            # Get the current image
-            frame = self.ros2_node.current_image.copy()
+            if not depth_frame:
+                raise RuntimeError("Failed to capture depth frame")
             
-            if output_path is None:
-                # Generate default output path
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_path = f"capture_{timestamp}.png"
+            # Convert to numpy array
+            depth_image = np.asanyarray(depth_frame.get_data())
             
-            # Save the image
-            cv2.imwrite(output_path, frame)
-            return output_path
+            # Log depth information
+            valid_pixels = np.count_nonzero(depth_image)
+            total_pixels = depth_image.size
+            valid_percentage = (valid_pixels / total_pixels) * 100
+            
+            self.logger.info(f"Depth frame captured: {depth_image.shape}, "
+                           f"{valid_pixels}/{total_pixels} valid pixels ({valid_percentage:.1f}%)")
+            
+            if filename:
+                # Save as 16-bit PNG to preserve depth data
+                cv2.imwrite(filename, depth_image)
+                self.logger.info(f"Depth image saved to {filename}")
+            
+            return depth_image
             
         except Exception as e:
-            raise RuntimeError(f"Failed to capture image: {e}")
+            self.logger.error(f"Failed to capture depth image: {e}")
+            raise
     
-    def _capture_image_opencv(self, output_path: str = None):
-        """Fallback image capture using OpenCV"""
-        cap = cv2.VideoCapture(0)
+    def start_video_recording(self, filename: str, fps: int = 30, quality: str = "high", 
+                            codec: str = "mp4v", duration: float = None):
+        """Start video recording with specified quality and FPS"""
+        if not self.capturing:
+            raise RuntimeError("Camera not capturing")
         
-        if not cap.isOpened():
-            raise RuntimeError("Cannot open camera for capture")
-        
-        ret, frame = cap.read()
-        cap.release()
-        
-        if not ret:
-            raise RuntimeError("Failed to capture frame")
-        
-        if output_path is None:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = f"capture_{timestamp}.png"
-        
-        cv2.imwrite(output_path, frame)
-        return output_path
+        try:
+            # Determine resolution based on current camera setup
+            if REALSENSE_AVAILABLE and self.pipeline:
+                # For RealSense, we need to get the actual stream resolution
+                frames = self.pipeline.wait_for_frames()
+                color_frame = frames.get_color_frame()
+                if color_frame:
+                    width = color_frame.get_width()
+                    height = color_frame.get_height()
+                else:
+                    width, height = 1920, 1080  # Default ultra resolution
+            else:
+                # For OpenCV, get from camera properties
+                if hasattr(self, 'cap'):
+                    width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                else:
+                    width, height = 1920, 1080  # Default
+            
+            # Define codec options
+            codec_options = {
+                'mp4v': cv2.VideoWriter_fourcc(*'mp4v'),  # Good quality, widely supported
+                'xvid': cv2.VideoWriter_fourcc(*'XVID'),  # High compression
+                'h264': cv2.VideoWriter_fourcc(*'H264'),  # Modern codec, best quality
+                'mjpg': cv2.VideoWriter_fourcc(*'MJPG'),  # Motion JPEG, good for high fps
+            }
+            
+            fourcc = codec_options.get(codec.lower(), cv2.VideoWriter_fourcc(*'mp4v'))
+            
+            # Create VideoWriter
+            self.video_writer = cv2.VideoWriter(filename, fourcc, fps, (width, height))
+            
+            if not self.video_writer.isOpened():
+                raise RuntimeError(f"Failed to open video writer for {filename}")
+            
+            self.video_filename = filename
+            self.video_fps = fps
+            self.video_quality = quality
+            self.video_duration = duration
+            self.video_start_time = time.time()
+            self.is_recording = True
+            
+            self.logger.info(f"Started video recording: {filename} ({width}x{height} @ {fps}fps, {quality} quality)")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to start video recording: {e}")
+            return False
     
-    def test_connection(self):
-        """Test if connection is working"""
-        if not self.connected:
+    def record_video_frame(self):
+        """Record a single frame to the video file"""
+        if not self.is_recording or not hasattr(self, 'video_writer'):
             return False
         
         try:
-            if not ROS2_AVAILABLE:
-                # Fallback test using OpenCV
-                cap = cv2.VideoCapture(0)
-                is_open = cap.isOpened()
-                cap.release()
-                return is_open
+            # Check duration limit
+            if self.video_duration and (time.time() - self.video_start_time) >= self.video_duration:
+                self.stop_video_recording()
+                return False
             
-            # Test using lsusb like the GUI implementation
-            result = subprocess.run(['lsusb'], capture_output=True, text=True)
-            for line in result.stdout.splitlines():
-                if "Intel Corp." in line or "RealSense" in line:
-                    return True
-            return False
+            # Capture frame
+            if REALSENSE_AVAILABLE and self.pipeline:
+                frames = self.pipeline.wait_for_frames()
+                color_frame = frames.get_color_frame()
+                
+                if not color_frame:
+                    return False
+                
+                frame = np.asanyarray(color_frame.get_data())
+                
+            else:
+                # OpenCV fallback
+                if hasattr(self, 'cap'):
+                    ret, frame = self.cap.read()
+                    if not ret:
+                        return False
+                else:
+                    return False
+
+            # Write frame to video
+            self.video_writer.write(frame)
+            return True
             
         except Exception as e:
-            print(f"[ERROR] Camera connection test failed: {e}")
+            self.logger.error(f"Failed to record video frame: {e}")
             return False
+    
+    def stop_video_recording(self):
+        """Stop video recording"""
+        try:
+            if hasattr(self, 'video_writer') and self.video_writer:
+                self.video_writer.release()
+                delattr(self, 'video_writer')
+            
+            self.is_recording = False
+            duration = time.time() - getattr(self, 'video_start_time', time.time())
+            
+            self.logger.info(f"Video recording stopped. Duration: {duration:.1f}s")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error stopping video recording: {e}")
+            return False
+    
+    def get_camera_info(self):
+        """Get camera information"""
+        if REALSENSE_AVAILABLE and self.pipeline:
+            try:
+                ctx = rs.context()
+                devices = ctx.query_devices()
+                if len(devices) > 0:
+                    device = devices[0]
+                    return {
+                        'name': device.get_info(rs.camera_info.name),
+                        'serial': device.get_info(rs.camera_info.serial_number),
+                        'firmware': device.get_info(rs.camera_info.firmware_version),
+                        'type': 'Intel RealSense'
+                    }
+            except Exception:
+                pass
+        
+        return {
+            'name': 'Generic Camera',
+            'type': 'OpenCV',
+            'index': getattr(self, 'camera_index', 0)
+        }
 
 
 class CameraSystem(BaseSystem):
-    """Camera system implementation using GUI connection functions"""
+    """Camera system for capturing images and depth data"""
     
     def __init__(self, name: str, config: Dict[str, Any]):
         super().__init__(name, config)
-        self.camera_controller = CameraController()
+        self.controller = RealSenseCameraController()
         self.logger = logging.getLogger(__name__)
-        self.current_inspection_folder = None  # Will be set by system manager
+        self.connected = False
+        
+    def initialize(self) -> bool:
+        """Initialize the camera system"""
+        try:
+            device_id = self.config.get('device_id', 'Intel Corp')
+            resolution = self.config.get('resolution', 'high')  # Default to high quality
+            success = self.controller.connect(device_id, resolution)
+            if success:
+                self.connected = True
+                self.is_initialized = True
+                self.logger.info(f"Camera system initialized successfully with {resolution} resolution")
+            return success
+        except Exception as e:
+            self.logger.error(f"Failed to initialize camera: {e}")
+            self.connected = False
+            self.is_initialized = False
+            return False
+    
+    def execute_step(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a camera step with given configuration"""
+        if not self.is_initialized:
+            return {"success": False, "error": "Camera system not initialized"}
+        
+        try:
+            action = step_config.get('action', 'capture_image')
+            parameters = step_config.get('parameters', {})
+            
+            return self.execute_action(action, parameters)
+            
+        except Exception as e:
+            self.logger.error(f"Camera step execution failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def test_connection(self) -> Dict[str, Any]:
+        """Test camera connection"""
+        try:
+            required_device_id = self.config.get('device_id', 'Intel Corp')
+            
+            if not self.connected:
+                # Try to initialize if not connected
+                if not self.initialize():
+                    # Check if RealSense SDK is available
+                    if not REALSENSE_AVAILABLE:
+                        return {
+                            "status": "not_available",
+                            "message": "Intel RealSense SDK not available",
+                            "details": {"device_id": required_device_id, "sdk_available": False}
+                        }
+                    
+                    # Check if any RealSense devices are connected
+                    try:
+                        ctx = rs.context()
+                        devices = ctx.query_devices()
+                        if len(devices) == 0:
+                            return {
+                                "status": "not_available", 
+                                "message": "No Intel RealSense cameras detected",
+                                "details": {"device_id": required_device_id}
+                            }
+                        else:
+                            available_devices = [dev.get_info(rs.camera_info.name) for dev in devices]
+                            return {
+                                "status": "not_available",
+                                "message": f"Required camera not found: {required_device_id}",
+                                "details": {
+                                    "required_device": required_device_id,
+                                    "available_devices": available_devices
+                                }
+                            }
+                    except:
+                        return {
+                            "status": "not_available",
+                            "message": "Failed to detect RealSense cameras",
+                            "details": {"device_id": required_device_id}
+                        }
+            
+            # Try to start and immediately stop camera to test
+            if self.controller.start_camera():
+                self.controller.stop_camera()
+                camera_info = self.controller.get_camera_info()
+                return {
+                    "status": "available",
+                    "message": f"Camera connection successful (name: {camera_info.get('name', 'Unknown')})",
+                    "details": camera_info
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": "Camera connected but failed to start streaming",
+                    "details": {}
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Camera connection test failed: {e}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "details": {}
+            }
         
     def set_inspection_folder(self, folder_path: str):
         """Set the current inspection folder path for output"""
         self.current_inspection_folder = folder_path
         self.logger.info(f"Camera system inspection folder set to: {folder_path}")
         
-    def initialize(self) -> bool:
-        """Initialize the camera system"""
-        try:
-            self.logger.info(f"Initializing camera system: {self.name}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to initialize camera system: {e}")
-            return False
-    
-    def connect(self) -> bool:
-        """Connect to the camera"""
-        try:
-            device_id = self.config.get('device_id', 'Intel Corp')
-            
-            self.logger.info(f"Attempting to connect to camera: {device_id}")
-            
-            success = self.camera_controller.connect(device_id)
-            if success:
-                self.logger.info("Camera connected successfully")
-                return True
-            else:
-                self.logger.error("Failed to connect to camera")
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"Camera connection error: {e}")
-            return False
-    
-    def disconnect(self) -> bool:
-        """Disconnect from the camera"""
-        try:
-            success = self.camera_controller.disconnect()
-            if success:
-                self.logger.info("Camera disconnected successfully")
-            return success
-        except Exception as e:
-            self.logger.error(f"Camera disconnection error: {e}")
-            return False
-    
-    def test_connection(self) -> Dict[str, Any]:
-        """Test camera connection"""
-        try:
-            if self.camera_controller.test_connection():
-                return {
-                    'status': 'available',
-                    'message': 'Camera connected and ready',
-                    'details': {
-                        'device_id': self.camera_controller.device_id,
-                        'capturing': self.camera_controller.capturing
-                    }
-                }
-            else:
-                # Try to connect
-                if self.connect():
-                    return {
-                        'status': 'available',
-                        'message': 'Camera connection established',
-                        'details': {
-                            'device_id': self.camera_controller.device_id,
-                            'capturing': self.camera_controller.capturing
-                        }
-                    }
-                else:
-                    return {
-                        'status': 'not_available',
-                        'message': 'Camera connection failed - check if camera is connected'
-                    }
-        except Exception as e:
-            self.logger.error(f"Camera connection test failed: {e}")
-            return {
-                'status': 'error',
-                'message': f'Camera test error: {str(e)}'
-            }
-    
-    def execute_step(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a step on the camera"""
-        step_name = step_config.get('name', 'unknown')
-        self.logger.info(f"Executing camera step: {step_name}")
+    def execute_action(self, action: str, parameters: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Execute camera action"""
+        if parameters is None:
+            parameters = {}
         
         try:
-            # Ensure connection
-            if not self.camera_controller.connected:
-                if not self.connect():
-                    raise ConnectionError("Cannot connect to camera")
-            
-            # Execute the step based on step configuration
-            action = step_config.get('action', 'take_photo')
-            
-            if action == 'initialize_camera':
-                return self._initialize_camera(step_config)
-            elif action == 'take_photo':
-                return self._take_photo(step_config)
-            elif action == 'take_video':
-                return self._take_video(step_config)
-            elif action == 'stop_camera':
-                return self._stop_camera_action(step_config)
-            elif action == 'show_camera':
-                return self._show_camera(step_config)
-            # Legacy support for old action names
-            elif action == 'capture':
-                return self._take_photo(step_config)
-            elif action == 'start_recording':
-                return self._take_video(step_config)
-            elif action == 'stop_recording':
-                return self._stop_recording(step_config)
+            if action == "capture_image":
+                return self._capture_image(parameters)
+            elif action == "capture_depth":
+                return self._capture_depth(parameters)
+            elif action == "start_stream":
+                return self._start_stream(parameters)
+            elif action == "stop_stream":
+                return self._stop_stream(parameters)
+            elif action == "record_video":
+                return self._record_video(parameters)
+            elif action == "start_video_recording":
+                return self._start_video_recording(parameters)
+            elif action == "stop_video_recording":
+                return self._stop_video_recording(parameters)
+            elif action == "take_video":  # Legacy support
+                return self._record_video(parameters)
+            elif action == "get_info":
+                return self._get_camera_info()
             else:
                 raise ValueError(f"Unknown camera action: {action}")
                 
         except Exception as e:
-            self.logger.error(f"Camera step execution failed: {e}")
-            raise
+            self.logger.error(f"Camera action '{action}' failed: {e}")
+            return {"success": False, "error": str(e)}
     
-    def _get_output_path(self, step_config: Dict[str, Any], default_filename: str) -> str:
-        """Determine the output path based on step configuration"""
-        path_config = step_config.get('path', 'classic')
-        
-        if path_config == 'classic':
-            # Use the inspection folder if available
-            if self.current_inspection_folder:
-                output_dir = os.path.join(self.current_inspection_folder, step_config.get('name', 'camera_data'))
-            else:
-                # Fallback to default output directory
-                output_dir = os.path.join('./output', 'camera_data')
-        else:
-            # Use custom path
-            output_dir = path_config
-        
-        os.makedirs(output_dir, exist_ok=True)
-        return os.path.join(output_dir, default_filename)
-    
-    def _initialize_camera(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Initialize camera and wait for it to be ready"""
-        self.logger.info("Initializing camera and waiting for ROS2 node to be ready")
-        
-        # Clean up any existing camera processes first
-        if self.camera_controller.capturing:
-            self.logger.info("Camera already running, stopping previous instance")
-            self.camera_controller.stop_camera()
-        
+    def _capture_image(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Capture a single image"""
         try:
-            # Start camera
-            success = self.camera_controller.start_camera()
-            if not success:
-                raise RuntimeError("Failed to start camera")
+            # Start camera if not already streaming
+            if not self.controller.capturing:
+                self.controller.start_camera()
             
-            # Wait for camera to be fully ready and receiving images
-            self.logger.info("Waiting for camera to be ready and receiving images...")
-            ready_timeout = step_config.get('ready_timeout', 10)  # Default 10 seconds
-            wait_interval = 0.5
-            waited = 0.0
+            # Generate filename if not provided
+            filename = parameters.get('filename')
+            if not filename:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"camera_image_{timestamp}.jpg"
             
-            while waited < ready_timeout:
-                if (ROS2_AVAILABLE and 
-                    self.camera_controller.ros2_node and 
-                    self.camera_controller.ros2_node.current_image is not None):
-                    self.logger.info(f"Camera ready after {waited:.1f}s - receiving images")
-                    break
-                elif not ROS2_AVAILABLE:
-                    # For fallback mode, just wait a bit
-                    self.logger.info(f"Camera ready after {waited:.1f}s - fallback mode")
-                    break
-                
-                time.sleep(wait_interval)
-                waited += wait_interval
-                
-                if waited % 2.0 < wait_interval:  # Log every 2 seconds
-                    self.logger.info(f"Still waiting for camera... ({waited:.1f}s / {ready_timeout}s)")
+            # Use current inspection folder if available
+            if self.current_inspection_folder and not os.path.isabs(filename):
+                filename = os.path.join(self.current_inspection_folder, filename)
             
-            if waited >= ready_timeout:
-                self.logger.warning(f"Camera initialization timeout after {ready_timeout}s")
-                return {
-                    'status': 'warning',
-                    'message': f'Camera initialized but may not be fully ready (timeout after {ready_timeout}s)',
-                    'data': {
-                        'action': 'initialize_camera',
-                        'ready_timeout': ready_timeout,
-                        'waited_time': waited,
-                        'ros2_enabled': ROS2_AVAILABLE,
-                        'timestamp': self.get_timestamp()
+            # Ensure output directory exists
+            output_dir = os.path.dirname(filename)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Get enhancement settings
+            enhance_quality = parameters.get('enhance_quality', False)
+            denoise = parameters.get('denoise', False)
+            
+            # Capture image with optional enhancements
+            image = self.controller.capture_image(filename=None, enhance_quality=enhance_quality, denoise=denoise)
+            
+            # Apply additional image quality settings if specified
+            quality = parameters.get('quality', 95)  # JPEG quality (0-100)
+            
+            if filename.lower().endswith('.jpg') or filename.lower().endswith('.jpeg'):
+                # Save with specified quality
+                cv2.imwrite(filename, image, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            elif filename.lower().endswith('.png'):
+                # PNG compression level (0-9, where 9 is best compression)
+                compression = parameters.get('compression', 1)  # Low compression for better quality
+                cv2.imwrite(filename, image, [cv2.IMWRITE_PNG_COMPRESSION, compression])
+            else:
+                # Default save
+                cv2.imwrite(filename, image)
+            
+            # Calculate file size for reporting
+            file_size = os.path.getsize(filename) if os.path.exists(filename) else 0
+            
+            return {
+                "success": True,
+                "filename": filename,
+                "image_shape": image.shape if image is not None else None,
+                "quality": quality,
+                "file_size_mb": round(file_size / (1024*1024), 2),
+                "enhanced": enhance_quality or denoise,
+                "message": f"{'Enhanced ' if enhance_quality or denoise else ''}high quality image captured successfully: {filename}"
+            }
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def _capture_depth(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Capture depth image"""
+        try:
+            # Start camera if not already streaming
+            if not self.controller.capturing:
+                self.controller.start_camera()
+            
+            # Generate filename if not provided
+            filename = parameters.get('filename')
+            if not filename:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"depth_image_{timestamp}.png"
+            
+            # Use current inspection folder if available
+            if self.current_inspection_folder and not os.path.isabs(filename):
+                filename = os.path.join(self.current_inspection_folder, filename)
+            
+            # Ensure output directory exists
+            output_dir = os.path.dirname(filename)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Get additional parameters
+            create_colormap = parameters.get('create_colormap', True)  # Generate colorized depth image
+            save_raw = parameters.get('save_raw', True)  # Save raw 16-bit depth data
+            
+            # Capture depth image
+            depth_image = self.controller.capture_depth_image(filename if save_raw else None)
+            
+            results = {
+                "success": True,
+                "depth_shape": depth_image.shape if depth_image is not None else None,
+                "message": f"Depth image captured successfully: {filename}"
+            }
+            
+            # Create colorized version for visualization
+            if create_colormap and depth_image is not None:
+                colormap_filename = filename.replace('.png', '_colormap.png')
+                colorized_depth = self._create_depth_colormap(depth_image)
+                cv2.imwrite(colormap_filename, colorized_depth)
+                results["colormap_filename"] = colormap_filename
+                results["message"] += f" and colormap: {colormap_filename}"
+            
+            # Add depth statistics
+            if depth_image is not None:
+                # Filter out zero values (invalid depth)
+                valid_depth = depth_image[depth_image > 0]
+                if len(valid_depth) > 0:
+                    results["depth_stats"] = {
+                        "min_depth_mm": int(np.min(valid_depth)),
+                        "max_depth_mm": int(np.max(valid_depth)),
+                        "mean_depth_mm": int(np.mean(valid_depth)),
+                        "valid_pixels": len(valid_depth),
+                        "total_pixels": depth_image.size
                     }
-                }
             
+            # Calculate file size
+            if os.path.exists(filename):
+                file_size = os.path.getsize(filename)
+                results["file_size_mb"] = round(file_size / (1024*1024), 2)
+            
+            results["filename"] = filename
+            return results
+            
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def _create_depth_colormap(self, depth_image):
+        """Create a colorized depth image for visualization"""
+        try:
+            # Normalize depth image to 0-255 range
+            depth_normalized = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+            
+            # Apply colormap (COLORMAP_JET gives a nice rainbow effect)
+            colorized = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_JET)
+            
+            # Set invalid depth pixels (0) to black
+            mask = depth_image == 0
+            colorized[mask] = [0, 0, 0]
+            
+            return colorized
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create depth colormap: {e}")
+            # Return a simple grayscale version as fallback
+            return cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    
+    def _start_stream(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Start camera streaming"""
+        try:
+            success = self.controller.start_camera()
             return {
-                'status': 'success',
-                'message': f'Camera initialized and ready (waited {waited:.1f}s)',
-                'data': {
-                    'action': 'initialize_camera',
-                    'ready_time': waited,
-                    'ready_timeout': ready_timeout,
-                    'ros2_enabled': ROS2_AVAILABLE,
-                    'device_id': self.camera_controller.device_id,
-                    'timestamp': self.get_timestamp()
-                }
+                "success": success,
+                "message": "Camera streaming started" if success else "Failed to start camera streaming"
             }
-            
         except Exception as e:
-            self.logger.error(f"Camera initialization failed: {e}")
-            raise RuntimeError(f"Camera initialization failed: {e}")
+            return {"success": False, "error": str(e)}
     
-    def _stop_camera_action(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Stop camera and clean up all processes"""
-        self.logger.info("Stopping camera and cleaning up processes")
-        
+    def _stop_stream(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Stop camera streaming"""
         try:
-            success = self.camera_controller.stop_camera()
-            
-            if success:
-                message = "Camera stopped and processes cleaned up successfully"
-            else:
-                message = "Camera stop completed with warnings"
-            
+            success = self.controller.stop_camera()
             return {
-                'status': 'success',
-                'message': message,
-                'data': {
-                    'action': 'stop_camera',
-                    'cleanup_success': success,
-                    'timestamp': self.get_timestamp()
-                }
+                "success": success,
+                "message": "Camera streaming stopped" if success else "Failed to stop camera streaming"
             }
-            
         except Exception as e:
-            self.logger.error(f"Error stopping camera: {e}")
-            raise RuntimeError(f"Error stopping camera: {e}")
+            return {"success": False, "error": str(e)}
     
-    def _take_photo(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Take a single photo using ROS2 camera feed (camera must be initialized first)"""
-        self.logger.info("Taking photo with camera")
-        
-        # Check if camera is ready
-        if not self.camera_controller.capturing:
-            self.logger.warning("Camera not initialized, attempting to start...")
-            self.camera_controller.start_camera()
-            time.sleep(3)  # Basic wait, but recommend using initialize_camera first
-        
-        # Generate output path
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_filename = f'photo_{timestamp}.jpg'
-        output_path = self._get_output_path(step_config, default_filename)
-        
+    def _get_camera_info(self) -> Dict[str, Any]:
+        """Get camera information"""
         try:
-            saved_path = self.camera_controller.capture_image(output_path)
-            
-            result = {
-                'status': 'success',
-                'message': 'Photo captured successfully',
-                'data': {
-                    'image_path': saved_path,
-                    'timestamp': self.get_timestamp(),
-                    'action': 'take_photo',
-                    'ros2_enabled': ROS2_AVAILABLE,
-                    'device_id': self.camera_controller.device_id
-                }
-            }
-            
-            # Add file saving info if specified
-            if step_config.get('saving_file', False):
-                result['file_saved'] = True
-                result['output_path'] = saved_path
-            
-            self.logger.info(f"Photo saved to: {saved_path}")
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"Photo capture failed: {e}")
-            raise RuntimeError(f"Photo capture failed: {e}")
-    
-    def _take_video(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Take a video with specified recording time (camera must be initialized first)"""
-        self.logger.info("Starting video recording")
-        
-        recording_time = step_config.get('recording_time', 10)  # Default 10 seconds
-        parameters = step_config.get('parameters', {})
-        resolution = parameters.get('resolution', '1920x1080')
-        fps = parameters.get('fps', 30)
-        
-        # Check if camera is ready
-        if not self.camera_controller.capturing:
-            self.logger.warning("Camera not initialized, attempting to start...")
-            self.camera_controller.start_camera()
-            time.sleep(3)  # Basic wait, but recommend using initialize_camera first
-        
-        # Generate output path
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_filename = f'video_{timestamp}.mp4'
-        output_path = self._get_output_path(step_config, default_filename)
-        
-        try:
-            # Record video for specified time using OpenCV
-            saved_path = self._record_video_opencv(output_path, recording_time, resolution, fps)
-            
-            result = {
-                'status': 'success',
-                'message': f'Video recorded successfully for {recording_time} seconds',
-                'data': {
-                    'video_path': saved_path,
-                    'recording_time': recording_time,
-                    'resolution': resolution,
-                    'fps': fps,
-                    'timestamp': self.get_timestamp(),
-                    'action': 'take_video'
-                }
-            }
-            
-            # Add file saving info if specified
-            if step_config.get('saving_file', False):
-                result['file_saved'] = True
-                result['output_path'] = saved_path
-            
-            return result
-            
-        except Exception as e:
-            raise RuntimeError(f"Video recording failed: {e}")
-    
-    def _show_camera(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Enable camera in the GUI (show live feed)"""
-        self.logger.info("Showing camera in GUI")
-        
-        try:
-            # Start camera if not already capturing
-            if not self.camera_controller.capturing:
-                success = self.camera_controller.start_camera()
-                if not success:
-                    raise RuntimeError("Failed to start camera for GUI display")
-            
-            # For GUI integration, this would typically signal the GUI to show camera feed
-            # For now, we'll just ensure the camera is running
-            
+            info = self.controller.get_camera_info()
             return {
-                'status': 'success',
-                'message': 'Camera enabled in GUI',
-                'data': {
-                    'action': 'show_camera',
-                    'camera_status': 'active',
-                    'timestamp': self.get_timestamp()
-                }
+                "success": True,
+                "camera_info": info
             }
-            
         except Exception as e:
-            raise RuntimeError(f"Failed to show camera in GUI: {e}")
+            return {"success": False, "error": str(e)}
     
-    def _record_video_opencv(self, output_path: str, duration: int, resolution: str, fps: int) -> str:
-        """Record video using ROS2 camera feed or OpenCV fallback"""
+    def _record_video(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Record a video with specified duration, FPS, and quality"""
         try:
-            # Parse resolution
-            width, height = map(int, resolution.split('x'))
+            # Start camera if not already streaming
+            if not self.controller.capturing:
+                self.controller.start_camera()
             
-            # Define codec and create VideoWriter
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            # Get parameters
+            duration = parameters.get('duration', parameters.get('record_time', 10))  # Support both names
+            fps = parameters.get('fps', 30)
+            quality = parameters.get('quality', 'medium')  # low, medium, high, ultra
+            codec = parameters.get('codec', 'mp4v')  # mp4v, h264, xvid, mjpg
             
+            # Generate filename if not provided
+            filename = parameters.get('filename')
+            if not filename:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"camera_video_{timestamp}.mp4"
+            
+            # Use current inspection folder if available
+            if self.current_inspection_folder and not os.path.isabs(filename):
+                filename = os.path.join(self.current_inspection_folder, filename)
+            
+            # Ensure output directory exists
+            output_dir = os.path.dirname(filename)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Start video recording
+            success = self.controller.start_video_recording(filename, fps, quality, codec, duration)
+            
+            if not success:
+                return {"success": False, "error": "Failed to start video recording"}
+            
+            # Record frames for the specified duration
             start_time = time.time()
-            frame_count = 0
-            expected_frames = duration * fps
+            frames_recorded = 0
+            target_frame_time = 1.0 / fps
             
-            self.logger.info(f"Recording video: {duration}s at {fps}fps ({expected_frames} frames)")
+            self.logger.info(f"Recording video for {duration} seconds at {fps} FPS...")
             
-            if ROS2_AVAILABLE and self.camera_controller.ros2_node:
-                # Use ROS2 camera feed - SAME METHOD AS GUI (no spinning)
-                last_frame_time = start_time
+            while (time.time() - start_time) < duration:
+                frame_start = time.time()
                 
-                while (time.time() - start_time) < duration:
-                    current_time = time.time()
-                    
-                    # Only write frames at the target FPS to avoid overwhelming
-                    if current_time - last_frame_time >= (1.0 / fps):
-                        if self.camera_controller.ros2_node.current_image is not None:
-                            frame = self.camera_controller.ros2_node.current_image.copy()
-                            # Resize frame to target resolution
-                            frame_resized = cv2.resize(frame, (width, height))
-                            out.write(frame_resized)
-                            frame_count += 1
-                            last_frame_time = current_time
-                            
-                            # Display progress every 2 seconds
-                            if frame_count % (fps * 2) == 0:
-                                elapsed = time.time() - start_time
-                                self.logger.info(f"Recording... {elapsed:.1f}s / {duration}s")
-                    
-                    # Small sleep to prevent busy waiting - DON'T spin ROS2 here
-                    time.sleep(0.01)  # 10ms sleep, let ROS2 handle callbacks
-            else:
-                # Fallback to OpenCV
-                cap = cv2.VideoCapture(0)
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-                cap.set(cv2.CAP_PROP_FPS, fps)
+                if self.controller.record_video_frame():
+                    frames_recorded += 1
+                else:
+                    break
                 
-                if not cap.isOpened():
-                    raise RuntimeError("Cannot open camera for video recording")
-                
-                while (time.time() - start_time) < duration:
-                    ret, frame = cap.read()
-                    if not ret:
-                        self.logger.warning("Failed to read frame, continuing...")
-                        continue
-                    
-                    out.write(frame)
-                    frame_count += 1
-                    
-                    # Display progress
-                    if frame_count % (fps * 2) == 0:  # Every 2 seconds
-                        elapsed = time.time() - start_time
-                        self.logger.info(f"Recording... {elapsed:.1f}s / {duration}s")
-                
-                cap.release()
+                # Control frame rate
+                elapsed = time.time() - frame_start
+                if elapsed < target_frame_time:
+                    time.sleep(target_frame_time - elapsed)
             
-            # Release video writer
-            out.release()
+            # Stop recording
+            self.controller.stop_video_recording()
             
-            self.logger.info(f"Video recording completed: {frame_count} frames, saved to {output_path}")
-            return output_path
+            # Calculate file size
+            file_size = os.path.getsize(filename) if os.path.exists(filename) else 0
+            actual_duration = time.time() - start_time
+            actual_fps = frames_recorded / actual_duration if actual_duration > 0 else 0
+            
+            return {
+                "success": True,
+                "filename": filename,
+                "duration": round(actual_duration, 2),
+                "fps_requested": fps,
+                "fps_actual": round(actual_fps, 1),
+                "frames_recorded": frames_recorded,
+                "quality": quality,
+                "codec": codec,
+                "file_size_mb": round(file_size / (1024*1024), 2),
+                "message": f"Video recorded successfully: {filename} ({actual_duration:.1f}s @ {actual_fps:.1f}fps)"
+            }
             
         except Exception as e:
-            self.logger.error(f"Video recording error: {e}")
-            raise
+            # Ensure video recording is stopped on error
+            if hasattr(self.controller, 'is_recording') and self.controller.is_recording:
+                self.controller.stop_video_recording()
+            return {"success": False, "error": str(e)}
     
-    # Legacy method for backward compatibility
-    def _capture_image(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Legacy method - redirects to _take_photo"""
-        return self._take_photo(step_config)
-    
-    def _start_recording(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Legacy method - start video recording"""
-        self.logger.info("Starting video recording (legacy method)")
-        
-        success = self.camera_controller.start_camera()
-        if not success:
-            raise RuntimeError("Failed to start camera for recording")
-        
-        return {
-            'status': 'success',
-            'message': 'Video recording started',
-            'data': {
-                'action': 'start_recording',
-                'timestamp': self.get_timestamp()
-            }
-        }
-    
-    def _stop_recording(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Legacy method - stop video recording"""
-        self.logger.info("Stopping video recording (legacy method)")
-        
-        success = self.camera_controller.stop_camera()
-        if not success:
-            raise RuntimeError("Failed to stop camera recording")
-        
-        return {
-            'status': 'success',
-            'message': 'Video recording stopped',
-            'data': {
-                'action': 'stop_recording',
-                'timestamp': self.get_timestamp()
-            }
-        }
-    
-    def shutdown(self):
-        """Shutdown the camera system"""
+    def _start_video_recording(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Start video recording (for manual control)"""
         try:
-            # Stop recording if active
-            if self.camera_controller.capturing:
-                self.camera_controller.stop_camera()
+            # Start camera if not already streaming
+            if not self.controller.capturing:
+                self.controller.start_camera()
             
-            # Clean up any remaining processes
-            self.camera_controller._cleanup_existing_camera_processes()
+            # Get parameters
+            fps = parameters.get('fps', 30)
+            quality = parameters.get('quality', 'medium')
+            codec = parameters.get('codec', 'mp4v')
             
-            # Disconnect
-            self.disconnect()
+            # Generate filename if not provided
+            filename = parameters.get('filename')
+            if not filename:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"camera_video_{timestamp}.mp4"
             
-            # Shutdown ROS2 if initialized
-            if self.camera_controller.ros2_initialized and rclpy.ok():
-                try:
-                    rclpy.shutdown()
-                except Exception as e:
-                    self.logger.warning(f"Error shutting down ROS2: {e}")
+            # Use current inspection folder if available
+            if self.current_inspection_folder and not os.path.isabs(filename):
+                filename = os.path.join(self.current_inspection_folder, filename)
             
-            self.logger.info("Camera system shut down")
+            # Ensure output directory exists
+            output_dir = os.path.dirname(filename)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Start video recording
+            success = self.controller.start_video_recording(filename, fps, quality, codec)
+            
+            return {
+                "success": success,
+                "filename": filename if success else None,
+                "message": f"Video recording {'started' if success else 'failed'}: {filename}"
+            }
+            
         except Exception as e:
-            self.logger.error(f"Error shutting down camera system: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def _stop_video_recording(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Stop video recording (for manual control)"""
+        try:
+            success = self.controller.stop_video_recording()
+            return {
+                "success": success,
+                "message": "Video recording stopped" if success else "Failed to stop video recording"
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def cleanup(self):
+        """Clean up camera resources"""
+        try:
+            self.controller.stop_camera()
+            self.controller.disconnect()
+            self.logger.info("Camera system cleanup completed")
+        except Exception as e:
+            self.logger.error(f"Error during camera cleanup: {e}")
