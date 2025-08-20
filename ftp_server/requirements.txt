@@ -1,0 +1,2 @@
+pyftpdlib==1.5.9
+pyinstaller==5.13.2

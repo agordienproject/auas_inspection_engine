@@ -10,5 +10,5 @@ program:
         - step: 1
           name: "camera"
           system: "camera"
-          action: "take_photo"
+          action: "capture_image"
           saving_file: true

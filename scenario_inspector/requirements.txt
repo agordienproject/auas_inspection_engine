@@ -1,7 +1,33 @@
+# AUAS Scenario Inspector - Requirements
+# Core application dependencies
 PyQt5>=5.15.0
 PyYAML>=6.0
 python-dateutil>=2.8.0
+typing-extensions>=4.0.0
+
+# Database and API
 psycopg2-binary>=2.9.0
+requests>=2.25.0
 bcrypt>=4.0.0
+
+# Hardware interface dependencies
 pyserial>=3.5
+pyrealsense2>=2.50.0  # Intel RealSense SDK for Windows
 opencv-python>=4.5.0
+numpy>=1.21.0
+
+# Robot control
+xarm-python-sdk>=1.11.0
+
+# Windows-specific
+WMI>=1.5.1  # Windows device management (optional)
+python-dotenv>=1.0.0
+
+# FTP server (for standalone FTP functionality)
+pyftpdlib>=1.5.9
+
+# Development and packaging (optional)
+pyinstaller>=5.13.0
+
+# Note: scanCONTROL SDK must be installed separately from vendor
+# Path should be configured in app_config.yaml under systems.scanControl.llt_path

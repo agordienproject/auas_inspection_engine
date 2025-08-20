@@ -2,13 +2,25 @@
 
 A comprehensive inspection system designed for automated quality control using robotics and computer vision. The system consists of two main applications that work together to provide both manual control and automated inspection scenarios.
 
+**Platform:** Windows (converted from Linux/ROS2 to Windows standalone)
+
+## 🚀 Quick Start
+
+**New to this project?** See [QUICK_START.md](QUICK_START.md) for one-command installation!
+
+```bash
+git clone https://github.com/agordienproject/auas_inspection_engine.git
+cd auas_inspection_engine
+python install.py
+```
+
 ## System Overview
 
 The AUAS Inspection Engine integrates multiple hardware systems:
 - **Gantry Robot** - Igus ReBeL robot for precise positioning
 - **xArm Robot** - For additional manipulation tasks
 - **3D Scanner** - scanCONTROL for surface scanning
-- **Camera System** - Intel RealSense for image capture
+- **Camera System** - Intel RealSense for RGBD image capture (no ROS2 required)
 - **Rotating Table** - For 360° object inspection
 
 ## Main Applications
@@ -27,6 +39,7 @@ A standalone GUI for manual control and configuration of individual systems.
 - Gantry robot control with program execution
 - xArm robot control (SDK-based, no ROS2 required)
 - 3D scanner configuration and data acquisition
+- Intel RealSense camera control with depth capture
 - Rotating table control
 - System status monitoring
 
@@ -46,8 +59,14 @@ h5py>=3.7.0
 # For xArm control
 xarm-python-sdk>=1.16.0
 
+# Intel RealSense camera (Windows)
+pyrealsense2>=2.50.0
+
 # Serial communication (table)
 pyserial>=3.5
+
+# Windows device management (optional)
+WMI>=1.5.1
 
 # Note: scanCONTROL SDK (pylinllt) must be installed separately
 ```
@@ -82,6 +101,9 @@ psycopg2-binary>=2.9.0 # PostgreSQL database
 bcrypt>=4.0.0          # Password encryption
 pyserial>=3.5          # Serial communication
 opencv-python>=4.5.0   # Image processing
+pyrealsense2>=2.50.0   # Intel RealSense SDK
+numpy>=1.21.0          # Numerical computing
+WMI>=1.5.1             # Windows device management (optional)
 ```
 
 ## Hardware Systems
@@ -93,8 +115,8 @@ opencv-python>=4.5.0   # Image processing
 | Gantry Robot | TCP/IP | 192.168.3.11:3920 | Igus ReBeL |
 | xArm Robot | TCP/IP | 192.168.1.222 | Direct SDK |
 | 3D Scanner | TCP/IP | 192.168.3.2 | scanCONTROL |
-| Camera | USB | Intel RealSense | USB 3.0 required |
-| Rotating Table | Serial | /dev/ttyACM0 | Arduino-based |
+| Camera | USB | Intel RealSense | USB 3.0 required, RGBD capture |
+| Rotating Table | Serial | COM3 (or similar) | Arduino-based |
 
 ### Database Configuration
 
@@ -109,10 +131,25 @@ The system uses PostgreSQL for data persistence:
 
 1. **Python 3.8+** with pip
 2. **PostgreSQL** database access
-3. **Hardware drivers** installed for each system
-4. **VM Configuration** (if applicable):
-   - USB 3.0 enabled for camera
-   - Proper network bridge for robot communication
+3. **Intel RealSense SDK** for Windows
+4. **Hardware drivers** installed for each system
+5. **Windows 10/11** operating system
+
+### Hardware Setup Notes
+
+**Camera (Intel RealSense):**
+- Install Intel RealSense SDK from Intel's website
+- Ensure USB 3.0 connection for optimal performance
+- Use Device Manager to verify camera recognition
+
+**Rotating Table:**
+- Connect Arduino via USB
+- Identify COM port using Device Manager
+- Update `app_config.yaml` with correct COM port
+
+**Network Systems:**
+- Ensure all robots are on the same network
+- Test connectivity with ping commands
 
 ### Installation Steps
 
@@ -122,33 +159,38 @@ The system uses PostgreSQL for data persistence:
    cd auas_inspection_engine
    ```
 
-2. **Install GUI Application dependencies:**
+2. **Install Intel RealSense SDK:**
+   - Download from Intel's website
+   - Install Windows runtime and development packages
+
+3. **Install GUI Application dependencies:**
    ```bash
-   cd gui_application/ros2gui
+   cd gui_application\ros2gui
    pip install -r scanner_requirements.txt
    pip install -r xarm_simple_requirements.txt
    ```
 
-3. **Install Scenario Inspector dependencies:**
+4. **Install Scenario Inspector dependencies:**
    ```bash
    cd scenario_inspector
    pip install -r requirements.txt
    ```
 
-4. **Install scanCONTROL SDK:**
-   - Download scanCONTROL-Linux-SDK from Micro-Epsilon
+5. **Install scanCONTROL SDK:**
+   - Download scanCONTROL-Windows-SDK from Micro-Epsilon
    - Install pylinllt Python bindings
-   - Update paths in configuration files
+   - Update SDK path in `scenario_inspector\config\app_config.yaml`
 
-5. **Configure database connection:**
-   - Update `scenario_inspector/config/app_config.yaml`
-   - Ensure database connectivity
+6. **Configure system paths:**
+   - Update all file paths in `app_config.yaml` to Windows format
+   - Verify COM port for rotating table
+   - Test network connectivity to robots
 
 ## Usage
 
 ### Running the GUI Application
 
-```bash
+```powershell
 cd gui_application
 python gui_launcher.py
 ```
@@ -158,20 +200,42 @@ python gui_launcher.py
 - Real-time status monitoring
 - Manual program execution
 - System configuration
+- Intel RealSense camera with depth capture
 
 ### Running the Scenario Inspector
 
-```bash
-cd scenario_inspector/src
+```powershell
+cd scenario_inspector\src
 python main.py
 ```
 
 **Workflow:**
 1. Login with credentials
-2. Select inspection program from `programs/` directory
+2. Select inspection program from `programs\` directory
 3. Configure inspection parameters
 4. Execute automated inspection
 5. Review results and logs
+
+## Windows-Specific Changes
+
+### What Was Removed:
+- **ROS2 dependencies** - All ROS2 imports and functionality removed
+- **Linux system calls** - `lsusb`, `pkill`, etc. replaced with Windows equivalents
+- **Unix paths** - All paths converted to Windows format
+
+### What Was Added:
+- **Intel RealSense SDK** - Direct camera control with RGBD capture
+- **Windows device management** - Using WMI for device detection
+- **Windows process management** - Using `taskkill` instead of `pkill`
+- **COM port detection** - Windows serial port enumeration
+
+### Camera System Changes:
+- **Before:** ROS2 camera nodes with image topics
+- **After:** Direct Intel RealSense SDK with `pyrealsense2`
+- **New Features:** 
+  - Native depth image capture
+  - Better performance without ROS2 overhead
+  - Direct access to camera parameters
 
 ## Program Structure
 
@@ -204,28 +268,72 @@ auas_inspection_engine/
 
 ### Common Issues
 
-**Gantry System:**
-- Connect Python program first, then igusRobotControl
-- Set execution mode to "single" to avoid loops
-- Check TCP connection on port 3920
+**Camera System:**
+- Install Intel RealSense SDK before running applications
+- Verify camera connection in Device Manager
+- Ensure USB 3.0 connection for depth capture
+- Use OpenCV fallback if RealSense is unavailable
 
-**USB Devices in VM:**
-- Start VM before connecting USB devices
-- Use USB 3.0 configuration for camera
-- Verify connections with `lsusb` and `ls -la /dev/tty*`
+**COM Port Issues:**
+- Check Device Manager for Arduino COM port
+- Update `app_config.yaml` with correct COM port (e.g., COM3, COM4)
+- Ensure Arduino drivers are installed
 
-**ROS2 Environment:**
-```bash
-source /opt/ros/humble/setup.bash
-unset GTK_PATH
-export QT_QPA_PLATFORM=xcb
+**Network Connectivity:**
+- Test robot connections with: `ping 192.168.3.11` (gantry), `ping 192.168.1.222` (xArm)
+- Verify network adapter configuration
+- Check firewall settings for robot communication
+
+**Process Management:**
+- Use Task Manager to terminate stuck processes
+- Ensure proper cleanup of camera resources
+- Restart applications if device conflicts occur
+
+### Device Detection Commands (Windows)
+
+**Check COM ports:**
+```powershell
+# In PowerShell
+Get-WmiObject -Class Win32_SerialPort | Select-Object Name,DeviceID
+```
+
+**Check camera devices:**
+```powershell
+# In PowerShell
+Get-WmiObject -Class Win32_PnPEntity | Where-Object {$_.Name -like "*RealSense*"}
+```
+
+**Alternative camera check:**
+```python
+# In Python
+import pyrealsense2 as rs
+ctx = rs.context()
+print(f"Found {len(ctx.query_devices())} RealSense devices")
 ```
 
 ### Logging
 
 The Scenario Inspector creates detailed logs in:
-- Daily folders: `output/YYYY-MM-DD/`
+- Daily folders: `output\YYYY-MM-DD\`
 - Timestamped files: `inspection_YYYYMMDD_HHMMSS.log`
+
+## Configuration Update Required
+
+**⚠️ IMPORTANT:** You need to update the following paths in your configuration:
+
+1. **Scanner SDK Path** in `scenario_inspector\config\app_config.yaml`:
+   ```yaml
+   llt_path: "C:\\scanCONTROL-Windows-SDK\\python_bindings"  # Update to your actual path
+   ```
+
+2. **COM Port** in `scenario_inspector\config\app_config.yaml`:
+   ```yaml
+   port: "COM3"  # Update to your actual COM port (check Device Manager)
+   ```
+
+3. **Program Paths** in `scenario_inspector\config\app_config.yaml`:
+   - Verify all `programs_path` entries use Windows path format
+   - Ensure paths point to correct locations on your system
 
 ## Development
 

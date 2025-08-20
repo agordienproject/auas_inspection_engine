@@ -85,7 +85,7 @@ class FileManager:
                                inspection_data: dict) -> str:
         """Create inspection report file"""
         report_path = os.path.join(inspection_folder, "inspection_report.txt")
-        
+        self.logger.info(f"Creating inspection report at: {report_path}")   
         try:
             with open(report_path, 'w') as f:
                 f.write("AUAS INSPECTION REPORT\n")

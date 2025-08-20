@@ -1,6 +1,7 @@
 """
 System Manager for coordinating different inspection systems
 """
+import os
 import logging
 from typing import Dict, Any, Optional
 from config.config_manager import ConfigManager
@@ -22,10 +23,18 @@ class SystemManager:
         self.systems: Dict[str, BaseSystem] = {}
         self.current_inspection_folder = None
         
-        # Initialize file manager
+        # Initialize file manager with proper path resolution
         output_config = config_manager.get_output_config()
-        output_dir = output_config.get('base_directory', './output')
-        self.file_manager = FileManager(output_dir)
+        output_dir = output_config.get('base_directory', 'output')
+        
+        # Get the project root directory (parent of src)
+        current_dir = os.path.dirname(os.path.abspath(__file__))  # systems directory
+        src_dir = os.path.dirname(current_dir)  # src directory
+        project_root = os.path.dirname(src_dir)  # scenario_inspector directory
+        
+        # Resolve output directory relative to project root
+        full_output_dir = os.path.join(project_root, output_dir)
+        self.file_manager = FileManager(full_output_dir)
         
         self._initialize_systems()
         

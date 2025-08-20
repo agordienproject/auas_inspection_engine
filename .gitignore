@@ -23,3 +23,6 @@ logs/
 
 # Ignore output data
 output/
+
+build/
+auas_scenario_inspector.egg-info/

@@ -1,6 +1,6 @@
 program:
   name: "camera_photo_video"
-  description: "Take picture and video with camera system"
+  description: "Take picture and high quality video with camera system"
   
   stages:
     - stage: 1
@@ -10,8 +10,11 @@ program:
         - step: 1
           name: "camera"
           system: "camera"
-          action: "take_photo"
+          action: "capture_image"
           saving_file: true
+          parameters:
+            filename: "inspection_photo.jpg"
+            quality: 95
     - stage: 2
       name: "camera_video"
       together: false
@@ -19,6 +22,11 @@ program:
         - step: 1
           name: "camera"
           system: "camera"
-          action: "take_video"
-          record_time: 10
+          action: "record_video"
           saving_file: true
+          parameters:
+            filename: "inspection_video.mp4"
+            duration: 10
+            fps: 30
+            quality: "high"
+            codec: "h264"

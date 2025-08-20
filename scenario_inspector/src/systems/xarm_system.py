@@ -89,12 +89,12 @@ class XarmSystem(BaseSystem):
             
             # Test connection
             result = self.test_connection()
-            if result.get('success', False):
+            if result.get('status') == 'available':
                 self.is_initialized = True
                 self.logger.info("xArm system initialized successfully")
                 return True
             else:
-                self.logger.error(f"Failed to initialize xArm: {result.get('error', 'Unknown error')}")
+                self.logger.error(f"Failed to initialize xArm: {result.get('message', 'Unknown error')}")
                 return False
                 
         except Exception as e:
@@ -105,6 +105,19 @@ class XarmSystem(BaseSystem):
         """Test connection to the xArm robot"""
         try:
             self.logger.info(f"Testing connection to xArm at {self.ip}")
+            
+            # If SDK is not available, return not_available status
+            if not XARM_SDK_AVAILABLE:
+                self.logger.warning("xArm SDK not available, using mock mode")
+                return {
+                    "status": "not_available",
+                    "message": "xArm SDK not available - install with: pip install xarm-python-sdk",
+                    "details": {
+                        "ip": self.ip,
+                        "sdk_available": False,
+                        "mock_mode": True
+                    }
+                }
             
             # Create xArm API instance
             test_arm = XArmAPI(self.ip)
@@ -126,7 +139,7 @@ class XarmSystem(BaseSystem):
             
             if result1 == 0 and result2 == 0 and result3 == 0:
                 return {
-                    "success": True,
+                    "status": "available",
                     "message": f"Successfully connected to xArm at {self.ip}",
                     "details": {
                         "ip": self.ip,
@@ -137,8 +150,8 @@ class XarmSystem(BaseSystem):
                 }
             else:
                 return {
-                    "success": False,
-                    "error": f"Connection failed with results: {result1}, {result2}, {result3}",
+                    "status": "not_available",
+                    "message": f"Connection failed with results: {result1}, {result2}, {result3}",
                     "details": {
                         "ip": self.ip,
                         "sdk_available": XARM_SDK_AVAILABLE
@@ -147,8 +160,8 @@ class XarmSystem(BaseSystem):
                 
         except Exception as e:
             return {
-                "success": False,
-                "error": f"Connection test failed: {str(e)}",
+                "status": "error",
+                "message": f"Connection test failed: {str(e)}",
                 "details": {
                     "ip": self.ip,
                     "sdk_available": XARM_SDK_AVAILABLE
