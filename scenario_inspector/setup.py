@@ -23,7 +23,7 @@ class CustomInstallCommand(install):
     def post_install_setup(self):
         """Perform post-installation setup tasks"""
         print("\n" + "="*60)
-        print("🚀 AUAS Scenario Inspector - Post-Install Setup")
+        print("AUAS Scenario Inspector - Post-Install Setup")
         print("="*60)
         
         # Create .env file if it doesn't exist
@@ -35,8 +35,8 @@ class CustomInstallCommand(install):
         # Create output directories
         self.create_output_directories()
         
-        print("\n✅ Setup completed successfully!")
-        print("🎯 You can now run the application with: python src/main.py")
+        print("\nSetup completed successfully!")
+        print("You can now run the application with: python src/main.py")
         print("="*60)
     
     def create_env_file(self):
@@ -45,7 +45,7 @@ class CustomInstallCommand(install):
         env_file = project_root / ".env"
         
         if not env_file.exists():
-            print("📝 Creating .env file...")
+            print("Creating .env file...")
             env_content = """# .env file for AUAS Inspection Engine
 # Set the FTP server host, port, and base path here
 FTP_HOST=127.0.0.1
@@ -76,9 +76,9 @@ FTP_DEFAULT_SERVER=ftp://127.0.0.1""".format(
             
             with open(env_file, 'w') as f:
                 f.write(env_content)
-            print(f"✅ Created .env file at: {env_file}")
+            print(f"Created .env file at: {env_file}")
         else:
-            print("✅ .env file already exists")
+            print(".env file already exists")
     
     def verify_config_files(self):
         """Verify configuration files exist"""
@@ -87,13 +87,13 @@ FTP_DEFAULT_SERVER=ftp://127.0.0.1""".format(
         app_config_template = config_dir / "app_config_template.yaml"
         
         if not app_config.exists() and app_config_template.exists():
-            print("📋 Creating app_config.yaml from template...")
+            print("Creating app_config.yaml from template...")
             shutil.copy2(app_config_template, app_config)
-            print("✅ Created app_config.yaml")
+            print("Created app_config.yaml")
         elif app_config.exists():
-            print("✅ app_config.yaml exists")
+            print("app_config.yaml exists")
         else:
-            print("⚠️  Warning: No configuration files found")
+            print("Warning: No configuration files found")
     
     def create_output_directories(self):
         """Create necessary output directories"""
@@ -107,9 +107,9 @@ FTP_DEFAULT_SERVER=ftp://127.0.0.1""".format(
         for directory in directories:
             if not directory.exists():
                 directory.mkdir(parents=True, exist_ok=True)
-                print(f"📁 Created directory: {directory}")
+                print(f"Created directory: {directory}")
             else:
-                print(f"✅ Directory exists: {directory}")
+                print(f"Directory exists: {directory}")
 
 setup(
     name='auas-scenario-inspector',
