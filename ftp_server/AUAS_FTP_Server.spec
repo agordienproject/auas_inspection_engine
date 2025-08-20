@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\ftp_server\\ftp_server_main.py'],
+    ['c:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\ftp_server\\ftp_server_main.py'],
     pathex=[],
     binaries=[],
     datas=[],

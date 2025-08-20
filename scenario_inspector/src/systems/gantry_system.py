@@ -8,8 +8,9 @@ import os
 
 from systems.base_system import BaseSystem
 
-# Add CRI lib path
-sys.path.insert(0, 'C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine')
+# Add CRI lib path dynamically based on project structure
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, project_root)
 
 try:
     import cri_lib

@@ -4,6 +4,16 @@ A comprehensive inspection system designed for automated quality control using r
 
 **Platform:** Windows (converted from Linux/ROS2 to Windows standalone)
 
+## 🚀 Quick Start
+
+**New to this project?** See [QUICK_START.md](QUICK_START.md) for one-command installation!
+
+```bash
+git clone https://github.com/agordienproject/auas_inspection_engine.git
+cd auas_inspection_engine
+python install.py
+```
+
 ## System Overview
 
 The AUAS Inspection Engine integrates multiple hardware systems:

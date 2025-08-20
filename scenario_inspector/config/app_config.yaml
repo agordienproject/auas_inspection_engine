@@ -14,7 +14,7 @@ systems:
     type: "scanner_system"
   camera:
     connection_type: "usb"
-    device_id: "Intel Corp. Intel(R) RealSense(TM) Depth Camera 435i"
+    device_id: "Intel RealSense D435I"
     timeout: 15
     type: "camera_system"
     use_realsense_sdk: true  # Use Intel RealSense SDK instead of ROS2

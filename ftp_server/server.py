@@ -8,6 +8,12 @@ import sys
 import logging
 from pathlib import Path
 
+# Load environment variables
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+import os
+
 try:
     from pyftpdlib.authorizers import DummyAuthorizer
     from pyftpdlib.handlers import FTPHandler
@@ -21,18 +27,17 @@ except ImportError:
     from pyftpdlib.servers import FTPServer
 
 
+
 class AUASFTPServer:
     """Simple FTP Server for AUAS Inspection Engine"""
-    
-    def __init__(self, 
-                 host="127.0.0.1", 
-                 port=21, 
-                 base_path=r"C:\Users\Agordien\Documents\projects\AUAS\FTP"):
-        self.host = host
-        self.port = port
-        self.base_path = Path(base_path)
+
+    def __init__(self, host=None, port=None, base_path=None):
+        # Load from environment variables if not provided
+        self.host = host or os.getenv("FTP_HOST", "127.0.0.1")
+        self.port = int(port or os.getenv("FTP_PORT", 21))
+        self.base_path = Path(base_path or os.getenv("FTP_BASE_PATH", r"C:\\Users\\Agordien\\Documents\\projects\\AUAS\\FTP"))
         self.server = None
-        
+
         # Setup logging
         logging.basicConfig(
             level=logging.INFO,
@@ -129,24 +134,21 @@ class AUASFTPServer:
             self.logger.info("🛑 FTP Server stopped")
 
 
+
 def main():
     """Main function to start FTP server"""
     print("🏗️ AUAS Inspection Engine - FTP Server")
     print("=" * 50)
-    
-    # Create and start server
-    ftp_server = AUASFTPServer(
-        host="127.0.0.1",
-        port=21,
-        base_path=r"C:\\Users\\Agordien\\Documents\\projects\\AUAS\\FTP"
-    )
-    
+
+    # Create and start server (parameters will be loaded from .env by default)
+    ftp_server = AUASFTPServer()
+
     try:
         ftp_server.start()
     except Exception as e:
         print(f"❌ Failed to start server: {e}")
         return 1
-    
+
     return 0
 
 

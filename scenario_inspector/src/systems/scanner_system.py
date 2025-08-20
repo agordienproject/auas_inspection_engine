@@ -26,14 +26,17 @@ class ScannerController:
         # Initialize SDK with path from config
         load_scanner_sdk_from_config(config)
         
+        # Get fallback IP from config
+        self.fallback_ip = self.config.get('ip', '192.168.3.2')
+        
     def discover_devices(self):
         """Discover available scanCONTROL devices"""
         if not is_scanner_sdk_available():
-            return ["192.168.3.2"]  # Fallback for testing
+            return [self.fallback_ip]  # Fallback for testing
         
         llt = get_scanner_sdk()
         if not llt:
-            return ["192.168.3.2"]
+            return [self.fallback_ip]
             
         try:
             available_interfaces = [ct.create_string_buffer(8) for i in range(6)]
@@ -42,7 +45,7 @@ class ScannerController:
             ret = llt.get_device_interfaces(available_interfaces_p, len(available_interfaces))
             if ret < 1:
                 # Try known IP as fallback
-                return ["192.168.3.2"]
+                return [self.fallback_ip]
                 
             discovered_devices = []
             for i in range(ret):
@@ -50,13 +53,16 @@ class ScannerController:
                 if device_name:
                     discovered_devices.append(device_name)
                     
-            return discovered_devices if discovered_devices else ["192.168.3.2"]
+            return discovered_devices if discovered_devices else [self.fallback_ip]
             
         except Exception:
-            return ["192.168.3.2"]
+            return [self.fallback_ip]
     
-    def connect(self, device_interface="192.168.3.2"):
+    def connect(self, device_interface=None):
         """Connect to scanCONTROL device"""
+        if device_interface is None:
+            device_interface = self.fallback_ip
+            
         if not is_scanner_sdk_available():
             self.is_connected = True
             return True

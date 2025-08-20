@@ -48,12 +48,38 @@ class RealSenseCameraController:
             self.device_id = device_id
             
             if not REALSENSE_AVAILABLE:
-                # Fallback to OpenCV
-                return self._connect_opencv()
+                # If RealSense SDK is not available, we can't connect to RealSense cameras
+                self.logger.error("RealSense SDK not available - cannot connect to Intel RealSense camera")
+                return False
             
             # Initialize RealSense pipeline
             self.pipeline = rs.pipeline()
             self.config = rs.config()
+            
+            # Test camera availability and validate device
+            ctx = rs.context()
+            devices = ctx.query_devices()
+            
+            if len(devices) == 0:
+                self.logger.error("No RealSense devices found")
+                return False
+            
+            # Check if any of the detected devices match our required device_id
+            target_device = None
+            for device in devices:
+                device_name = device.get_info(rs.camera_info.name)
+                self.logger.info(f"Found RealSense device: {device_name}")
+                
+                # Check if this device matches our target device_id
+                if device_id in device_name:
+                    target_device = device
+                    self.logger.info(f"Target device found: {device_name}")
+                    break
+            
+            if target_device is None:
+                self.logger.error(f"Required camera device not found: {device_id}")
+                self.logger.error(f"Available devices: {[dev.get_info(rs.camera_info.name) for dev in devices]}")
+                return False
             
             # Configure streams based on resolution setting
             if resolution == "ultra":
@@ -73,13 +99,8 @@ class RealSenseCameraController:
                 self.config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
                 self.config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
             
-            # Test camera availability
-            ctx = rs.context()
-            devices = ctx.query_devices()
-            
-            if len(devices) == 0:
-                self.logger.warning("No RealSense devices found")
-                return self._connect_opencv()
+            # Enable the specific device we want to use
+            self.config.enable_device(target_device.get_info(rs.camera_info.serial_number))
             
             # Start streaming
             profile = self.pipeline.start(self.config)
@@ -107,12 +128,12 @@ class RealSenseCameraController:
                 self.logger.warning(f"Could not set camera quality settings: {e}")
             
             self.connected = True
-            self.logger.info(f"Successfully connected to RealSense camera: {devices[0].get_info(rs.camera_info.name)}")
+            self.logger.info(f"Successfully connected to RealSense camera: {target_device.get_info(rs.camera_info.name)}")
             return True
             
         except Exception as e:
             self.logger.error(f"Failed to connect to RealSense camera: {e}")
-            return self._connect_opencv()
+            return False
     
     def _connect_opencv(self, resolution: str = "high"):
         """Fallback connection using OpenCV"""
@@ -567,14 +588,45 @@ class CameraSystem(BaseSystem):
     def test_connection(self) -> Dict[str, Any]:
         """Test camera connection"""
         try:
+            required_device_id = self.config.get('device_id', 'Intel Corp')
+            
             if not self.connected:
                 # Try to initialize if not connected
                 if not self.initialize():
-                    return {
-                        "status": "not_available",
-                        "message": "Failed to connect to camera",
-                        "details": {"device_id": self.config.get('device_id', 'Unknown')}
-                    }
+                    # Check if RealSense SDK is available
+                    if not REALSENSE_AVAILABLE:
+                        return {
+                            "status": "not_available",
+                            "message": "Intel RealSense SDK not available",
+                            "details": {"device_id": required_device_id, "sdk_available": False}
+                        }
+                    
+                    # Check if any RealSense devices are connected
+                    try:
+                        ctx = rs.context()
+                        devices = ctx.query_devices()
+                        if len(devices) == 0:
+                            return {
+                                "status": "not_available", 
+                                "message": "No Intel RealSense cameras detected",
+                                "details": {"device_id": required_device_id}
+                            }
+                        else:
+                            available_devices = [dev.get_info(rs.camera_info.name) for dev in devices]
+                            return {
+                                "status": "not_available",
+                                "message": f"Required camera not found: {required_device_id}",
+                                "details": {
+                                    "required_device": required_device_id,
+                                    "available_devices": available_devices
+                                }
+                            }
+                    except:
+                        return {
+                            "status": "not_available",
+                            "message": "Failed to detect RealSense cameras",
+                            "details": {"device_id": required_device_id}
+                        }
             
             # Try to start and immediately stop camera to test
             if self.controller.start_camera():
@@ -582,7 +634,7 @@ class CameraSystem(BaseSystem):
                 camera_info = self.controller.get_camera_info()
                 return {
                     "status": "available",
-                    "message": "Camera connection successful",
+                    "message": f"Camera connection successful (name: {camera_info.get('name', 'Unknown')})",
                     "details": camera_info
                 }
             else:
