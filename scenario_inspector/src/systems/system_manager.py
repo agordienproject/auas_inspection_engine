@@ -58,7 +58,7 @@ class SystemManager:
         system_type = system_config.get('type', '').lower()
         
         if system_type == 'scanner_system' or system_name.lower() == 'scancontrol':
-            return ScannerSystem(system_name, system_config)
+            return ScanControlSystem(system_name, system_config)
         elif system_type == 'camera_system' or system_name.lower() == 'camera':
             return CameraSystem(system_name, system_config)
         elif system_type == 'rotating_table' or system_name.lower() == 'table':

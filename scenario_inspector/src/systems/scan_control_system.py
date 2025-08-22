@@ -1,137 +1,150 @@
 """
 Scan Control System for laser scanning operations
 """
+
 import time
 import os
 from typing import Dict, Any
 from systems.base_system import BaseSystem
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../python_bindings')))
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../libs/python_bindings')))
+import pyllt.pyllt as llt
+import ctypes as ct
 
 class ScanControlSystem(BaseSystem):
-    """System for laser scanning control"""
-    
+    def __init__(self, name: str, config: Dict[str, Any]):
+        super().__init__(name, config)
+        self.hLLT = None
+        self.resolution = None
+        self.scanner_type = None
+        self.connected = False
+
+    def test_connection(self) -> Dict[str, Any]:
+        try:
+            self.logger.info("Testing connection to ScanControl system...")
+            # Try to initialize and connect, then disconnect
+            if not self.initialize():
+                return {'status': 'error', 'message': 'Initialization failed'}
+            self.cleanup()
+            return {'status': 'success', 'message': 'ScanControl system connection test passed.'}
+        except Exception as e:
+            self.logger.error(f"ScanControl connection test failed: {e}")
+            return {'status': 'error', 'message': str(e)}
+
     def initialize(self) -> bool:
-        """Initialize scan control system"""
         try:
             self.logger.info(f"Initializing ScanControl at {self.config.get('ip', 'unknown')}")
-            
-            # Here you would typically:
-            # 1. Connect to the scan control device
-            # 2. Setup communication parameters
-            # 3. Verify device status
-            # 4. Load any necessary calibration data
-            
-            # For now, simulate initialization
-            time.sleep(1)  # Simulate connection time
-            
+            # 1. Create device handle for Ethernet
+            self.hLLT = llt.create_llt_device(llt.TInterfaceType.INTF_TYPE_ETHERNET)
+            # 2. Find available interfaces
+            available_interfaces = (ct.c_uint * 6)()
+            llt.get_device_interfaces_fast(self.hLLT, available_interfaces, len(available_interfaces))
+            # 3. Set first found interface
+            llt.set_device_interface(self.hLLT, available_interfaces[0])
+            # 4. Connect
+            if llt.connect(self.hLLT) != 0:
+                self.logger.error("Failed to connect to ScanControl device")
+                self.is_initialized = False
+                return False
+            # 5. Get scanner type
+            scanner_type = ct.c_int(0)
+            llt.get_llt_type(self.hLLT, ct.byref(scanner_type))
+            self.scanner_type = scanner_type.value
+            # 6. Get and set resolution (use highest by default)
+            available_resolutions = (ct.c_uint * 4)()
+            llt.get_resolutions(self.hLLT, available_resolutions, len(available_resolutions))
+            self.resolution = available_resolutions[0]
+            llt.set_resolution(self.hLLT, self.resolution)
+            # 7. Set profile config to PROFILE
+            llt.set_profile_config(self.hLLT, llt.TProfileConfig.PROFILE)
             self.is_initialized = True
             self.logger.info("ScanControl system initialized successfully")
             return True
-            
         except Exception as e:
             self.logger.error(f"Failed to initialize ScanControl: {e}")
             self.is_initialized = False
             return False
     
     def execute_step(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a scan control step"""
         if not self.is_initialized:
             raise RuntimeError("ScanControl system not initialized")
-        
         step_name = step_config.get('name', 'unknown')
-        mode = step_config.get('mode', 'recording_data')
+        action = step_config.get('action', 'recording_data')
         parameters = step_config.get('parameters', {})
         recording_time = step_config.get('recording_time', 10)
         saving_file = step_config.get('saving_file', False)
         output_path = step_config.get('path', 'scan_data')
-        
         self.logger.info(f"Executing ScanControl step: {step_name}")
-        self.logger.info(f"Mode: {mode}, Recording time: {recording_time}s")
-        
         try:
-            # Validate parameters
-            if not self.validate_scan_parameters(parameters):
-                raise ValueError("Invalid scan parameters")
-            
-            # Execute the scan based on mode
-            if mode == "recording_data":
+            if action == "recording_data":
                 return self._execute_data_recording(parameters, recording_time, saving_file, output_path)
-            elif mode == "calibration":
-                return self._execute_calibration(parameters)
-            elif mode == "test_scan":
-                return self._execute_test_scan(parameters)
             else:
-                raise ValueError(f"Unsupported scan mode: {mode}")
-                
+                raise ValueError(f"Unsupported scan action: {action}")
         except Exception as e:
             self.logger.error(f"ScanControl step execution failed: {e}")
-            return {
-                'success': False,
-                'error': str(e),
-                'step_name': step_name
-            }
+            return {'success': False, 'error': str(e), 'step_name': step_name}
     
-    def _execute_data_recording(self, parameters: Dict[str, Any], recording_time: int, 
-                              saving_file: bool, output_path: str) -> Dict[str, Any]:
-        """Execute data recording scan"""
-        self.logger.info("Starting data recording scan")
-        
-        # Simulate scan execution
-        # In real implementation, this would:
-        # 1. Configure scan parameters
-        # 2. Start data acquisition
-        # 3. Monitor progress
-        # 4. Save data if requested
-        
+    def _execute_data_recording(self, parameters: Dict[str, Any], recording_time: int, saving_file: bool, output_path: str) -> Dict[str, Any]:
+        self.logger.info("Starting data recording scan (real scanner)")
         start_time = time.time()
-        
-        # Simulate recording process
+        # Start profile transfer
+        llt.transfer_profiles(self.hLLT, llt.TTransferProfileType.NORMAL_TRANSFER, 1)
+        profile_buffer = (ct.c_ubyte * (self.resolution * 64))()
+        lost_profiles = ct.c_int()
+        profiles = []
         for i in range(recording_time):
-            time.sleep(1)  # Simulate 1 second of scanning
-            progress = (i + 1) / recording_time * 100
-            self.logger.debug(f"Scan progress: {progress:.1f}%")
-        
+            # Wait for profile (simulate 1Hz, real scanner may be faster)
+            time.sleep(1)
+            llt.get_actual_profile(self.hLLT, profile_buffer, len(profile_buffer), llt.TProfileConfig.PROFILE, ct.byref(lost_profiles))
+            # Convert profile to x, z, intensities
+            x = (ct.c_double * self.resolution)()
+            z = (ct.c_double * self.resolution)()
+            intensities = (ct.c_ushort * self.resolution)()
+            snull = ct.POINTER(ct.c_ushort)()
+            inull = ct.POINTER(ct.c_uint)()
+            llt.convert_profile_2_values(self.hLLT, profile_buffer, self.resolution, llt.TProfileConfig.PROFILE, self.scanner_type, 0, 1, snull, intensities, snull, x, z, inull, inull)
+            # Store profile data
+            profiles.append({
+                'x': [x[j] for j in range(self.resolution)],
+                'z': [z[j] for j in range(self.resolution)],
+                'intensities': [intensities[j] for j in range(self.resolution)]
+            })
+            self.logger.debug(f"Profile {i+1}/{recording_time} captured")
+        # Stop profile transfer
+        llt.transfer_profiles(self.hLLT, llt.TTransferProfileType.NORMAL_TRANSFER, 0)
         end_time = time.time()
         actual_duration = end_time - start_time
-        
         result = {
             'success': True,
             'step_name': 'laser_scan',
             'mode': 'recording_data',
             'duration': actual_duration,
             'parameters_used': parameters,
-            'data_points_collected': recording_time * 1000,  # Simulate data points
+            'profiles_captured': len(profiles),
             'file_saved': False,
             'output_path': None
         }
-        
         # Save data if requested
         if saving_file:
             try:
-                # Create output directory if it doesn't exist
                 os.makedirs(output_path, exist_ok=True)
-                
-                # Generate filename with timestamp
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
-                filename = f"scan_data_{timestamp}.dat"
+                filename = f"scan_data_{timestamp}.csv"
                 file_path = os.path.join(output_path, filename)
-                
-                # Simulate saving scan data
                 with open(file_path, 'w') as f:
-                    f.write(f"# Scan data recorded at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write(f"# Parameters: {parameters}\n")
-                    f.write(f"# Duration: {actual_duration:.2f} seconds\n")
-                    f.write("# Simulated scan data\n")
-                    for i in range(recording_time * 100):  # Simulate data points
-                        f.write(f"{i}, {i * 0.1}, {i * 0.05}\n")
-                
+                    f.write("# x,z,intensity\n")
+                    for profile in profiles:
+                        for j in range(self.resolution):
+                            f.write(f"{profile['x'][j]},{profile['z'][j]},{profile['intensities'][j]}\n")
                 result['file_saved'] = True
                 result['output_path'] = file_path
                 self.logger.info(f"Scan data saved to: {file_path}")
-                
             except Exception as e:
                 self.logger.error(f"Failed to save scan data: {e}")
                 result['save_error'] = str(e)
-        
         self.logger.info("Data recording scan completed successfully")
         return result
     
@@ -166,33 +179,17 @@ class ScanControlSystem(BaseSystem):
         }
     
     def validate_scan_parameters(self, parameters: Dict[str, Any]) -> bool:
-        """Validate scan-specific parameters"""
-        try:
-            # Check required parameters
-            param1 = parameters.get('param1')
-            if param1 is not None and not isinstance(param1, (int, float)):
-                self.logger.error("param1 must be a number")
-                return False
-            
-            param2 = parameters.get('param2')
-            if param2 is not None and not isinstance(param2, str):
-                self.logger.error("param2 must be a string")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Parameter validation error: {e}")
-            return False
+        # For now, always return True (use defaults)
+        return True
     
     def cleanup(self) -> None:
-        """Cleanup scan control resources"""
         self.logger.info("Cleaning up ScanControl system")
-        
-        # Here you would typically:
-        # 1. Stop any ongoing scans
-        # 2. Disconnect from the device
-        # 3. Release any resources
-        
+        try:
+            if self.hLLT is not None:
+                llt.disconnect(self.hLLT)
+                llt.del_device(self.hLLT)
+                self.hLLT = None
+        except Exception as e:
+            self.logger.error(f"Error during cleanup: {e}")
         self.is_initialized = False
         self.logger.info("ScanControl system cleanup completed")

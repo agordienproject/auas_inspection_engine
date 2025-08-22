@@ -13,6 +13,9 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 sys.path.insert(0, project_root)
 
 try:
+    import sys
+    import os
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../libs')))
     import cri_lib
     CRI_AVAILABLE = True
 except ImportError as e:
