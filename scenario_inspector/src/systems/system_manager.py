@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Any, Optional
 from config.config_manager import ConfigManager
 from systems.base_system import BaseSystem
-from systems.scanner_system import ScannerSystem
+from systems.scan_control_system import ScanControlSystem
 from systems.gantry_system import GantrySystem
 from systems.table_system import TableSystem
 from systems.camera_system import CameraSystem

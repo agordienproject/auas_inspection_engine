@@ -18,5 +18,3 @@ program:
             param2: "ex"
           action: "recording_data"
           recording_time: 20
-          saving_file: true
-          path: "scan_data"

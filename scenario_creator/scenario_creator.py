@@ -34,6 +34,13 @@ SYSTEM_ACTIONS = {
         },
         'stop_camera': {},
     },
+    'scan_control': {
+        'recording_data': {
+            'param1': {'type': 'int', 'default': 1300},
+            'param2': {'type': 'str', 'default': 'ex'},
+            'recording_time': {'type': 'int', 'default': 20},
+        },
+    },
     'gantry': {
         'load_and_run': {'program_name': 'str'},
     },
@@ -98,24 +105,52 @@ class StepWidget(QGroupBox):
         if system and action:
             params = SYSTEM_ACTIONS[system][action]
             for param, typ in params.items():
-                if typ == 'bool':
+                # Support dict with type/default
+                param_type = typ['type'] if isinstance(typ, dict) and 'type' in typ else typ
+                default = typ.get('default') if isinstance(typ, dict) else None
+                if param_type == 'bool':
                     widget = QCheckBox()
-                elif typ == 'int':
+                    if default is not None:
+                        widget.setChecked(bool(default))
+                elif param_type == 'int':
                     widget = NoWheelSpinBox()
                     widget.setMaximum(100000)
-                elif typ == 'float':
+                    if default is not None:
+                        widget.setValue(int(default))
+                elif param_type == 'float':
                     widget = QLineEdit()
                     widget.setPlaceholderText('float')
-                elif typ == 'combo':
+                    if default is not None:
+                        widget.setText(str(default))
+                elif param_type == 'combo':
                     widget = NoWheelComboBox()
-                    # Set dropdown values for camera quality/codec
+                    # Set dropdown values for camera quality/codec/scan_control mode
                     if param == 'quality':
                         widget.addItems(['low', 'medium', 'high', 'ultra'])
                     elif param == 'codec':
                         widget.addItems(['mp4v', 'xvid', 'h264', 'mjpg'])
+                    elif param == 'mode':
+                        widget.addItems(['recording_data'])
+                    if default is not None:
+                        idx = widget.findText(str(default))
+                        if idx >= 0:
+                            widget.setCurrentIndex(idx)
                 else:
                     widget = QLineEdit()
-                self.param_layout.addRow(param + ':', widget)
+                    if default is not None:
+                        widget.setText(str(default))
+                # Add .mp4 label for record_video filename
+                if system == 'camera' and action == 'record_video' and param == 'filename':
+                    hbox = QHBoxLayout()
+                    hbox.addWidget(widget)
+                    ext_label = QLabel('.mp4')
+                    ext_label.setStyleSheet('color: #888; margin-left: 2px;')
+                    hbox.addWidget(ext_label)
+                    container = QWidget()
+                    container.setLayout(hbox)
+                    self.param_layout.addRow(param + ':', container)
+                else:
+                    self.param_layout.addRow(param + ':', widget)
                 self.param_widgets[param] = widget
 
     def get_data(self):
@@ -125,7 +160,13 @@ class StepWidget(QGroupBox):
             'action': self.action_combo.currentText(),
         }
         for param, widget in self.param_widgets.items():
-            if isinstance(widget, QCheckBox):
+            # For record_video filename, ensure .mp4 is appended if missing
+            if data['system'] == 'camera' and data['action'] == 'record_video' and param == 'filename':
+                val = widget.text()
+                if val and not val.lower().endswith('.mp4'):
+                    val += '.mp4'
+                data[param] = val
+            elif isinstance(widget, QCheckBox):
                 data[param] = widget.isChecked()
             elif isinstance(widget, QSpinBox):
                 data[param] = widget.value()
@@ -333,7 +374,15 @@ class ScenarioCreator(QWidget):
             steps = []
             for step_idx, step in enumerate(stage_data['steps'], 1):
                 step_dict = {'step': step_idx}
-                step_dict.update({k: v for k, v in step.items() if k != 'step'})
+                # For record_video, nest parameters under 'parameters'
+                if step.get('system') == 'camera' and step.get('action') == 'record_video':
+                    params = {k: v for k, v in step.items() if k not in ('step', 'name', 'system', 'action')}
+                    step_dict['name'] = step.get('name', '')
+                    step_dict['system'] = step.get('system', '')
+                    step_dict['action'] = step.get('action', '')
+                    step_dict['parameters'] = params
+                else:
+                    step_dict.update({k: v for k, v in step.items() if k != 'step'})
                 steps.append(step_dict)
             program['program']['stages'].append({
                 'stage': stage_idx,
