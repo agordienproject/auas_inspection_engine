@@ -15,8 +15,28 @@ sys.path.insert(0, project_root)
 try:
     import sys
     import os
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../libs')))
-    import cri_lib
+    import importlib.util
+    # Robust import for cri_lib (dev and PyInstaller-frozen)
+    def _import_cri_lib():
+        try:
+            import cri_lib
+            return cri_lib
+        except ImportError:
+            # Try to find cri_lib in the bundled/frozen app or relative to main script
+            if hasattr(sys, '_MEIPASS'):
+                base = sys._MEIPASS
+            else:
+                main_dir = os.path.dirname(getattr(sys.modules['__main__'], '__file__', os.path.abspath(__file__)))
+                base = os.path.abspath(os.path.join(main_dir, '..', 'libs'))
+            cri_lib_path = base
+            if cri_lib_path not in sys.path:
+                sys.path.insert(0, cri_lib_path)
+            try:
+                import cri_lib
+                return cri_lib
+            except ImportError:
+                raise ImportError(f'Cannot find cri_lib in {cri_lib_path}')
+    cri_lib = _import_cri_lib()
     CRI_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: CRI library not available: {e}")

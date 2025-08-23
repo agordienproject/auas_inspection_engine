@@ -10,8 +10,38 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../python_bindings')))
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../libs/python_bindings')))
-import pyllt.pyllt as llt
+import importlib.util
+# Robust import for pyllt (dev and PyInstaller-frozen)
+def _import_pyllt():
+    try:
+        import pyllt
+        return pyllt
+    except ImportError:
+        # Try to find libs/python_bindings up to 3 levels up from exe or script
+        if hasattr(sys, '_MEIPASS'):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(getattr(sys.modules['__main__'], '__file__', os.path.abspath(__file__)))
+        found = False
+        for _ in range(4):  # Check current + 3 levels up
+            candidate = os.path.join(base_dir, 'libs', 'python_bindings')
+            if os.path.isdir(candidate):
+                if candidate not in sys.path:
+                    sys.path.insert(0, candidate)
+                found = True
+                break
+            parent = os.path.dirname(base_dir)
+            if parent == base_dir:
+                break
+            base_dir = parent
+        if not found:
+            raise ImportError('Cannot find libs/python_bindings directory in any of 3 parent folders')
+        try:
+            import pyllt
+            return pyllt
+        except ImportError:
+            raise ImportError('Cannot find pyllt after adding libs/python_bindings to sys.path')
+llt = _import_pyllt()
 import ctypes as ct
 
 class ScanControlSystem(BaseSystem):
