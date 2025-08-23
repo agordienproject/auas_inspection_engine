@@ -124,7 +124,7 @@ class TableController:
             self.logger.debug("[DEBUG] Status command sent successfully")
             return True
         except Exception as e:
-            self.logger.debug("[DEBUG] Exception in test_connection(): {e}")
+            self.logger.debug("[DEBUG] Exception in test_connection(): %s", e)
             return False
 
 
@@ -132,10 +132,11 @@ class TableSystem(BaseSystem):
     """Table system implementation using GUI connection functions"""
 
     def __init__(self, name: str, config: Dict[str, Any]):
+        # Ensure logger exists before any debug calls
+        self.logger = logging.getLogger(__name__)
         self.logger.debug("[DEBUG] TableSystem.__init__() called with name='{name}', config={config}")
         super().__init__(name, config)
         self.table_controller = TableController()
-        self.logger = logging.getLogger(__name__)
         self.logger.debug("[DEBUG] TableSystem initialized")
 
     def initialize(self) -> bool:
