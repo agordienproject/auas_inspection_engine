@@ -239,49 +239,49 @@ class ScenarioCreator(QWidget):
         self.resize(900, 700)
         main_layout = QVBoxLayout(self)
 
-        # Apply modern dark theme and style
+        # Apply modern light theme and style
         self.setStyleSheet('''
             QWidget {
-                background-color: #181A20;
-                color: #EAEAEA;
+                background-color: #F7F7FA;
+                color: #222;
                 font-family: "Segoe UI", "Arial", "sans-serif";
                 font-size: 15px;
             }
             QGroupBox {
-                border: 1.5px solid #2D2F36;
+                border: 1.5px solid #D0D0D0;
                 border-radius: 12px;
                 margin-top: 16px;
-                background-color: #23252B;
+                background-color: #FFFFFF;
                 padding: 12px;
             }
             QGroupBox:title {
                 subcontrol-origin: margin;
                 left: 16px;
                 padding: 0 6px 0 6px;
-                color: #7FC7FF;
+                color: #1976D2;
                 font-weight: bold;
                 font-size: 17px;
             }
             QLabel {
-                color: #B0B8C1;
+                color: #333;
                 font-size: 15px;
                 background: transparent;
             }
             QLineEdit, QTextEdit, QComboBox {
-                background: #23252B;
-                border: 1.5px solid #2D2F36;
+                background: #FAFAFA;
+                border: 1.5px solid #D0D0D0;
                 border-radius: 8px;
                 padding: 7px 10px;
-                color: #EAEAEA;
+                color: #222;
                 font-size: 15px;
             }
             QLineEdit:focus, QTextEdit:focus, QComboBox:focus {
-                border: 1.5px solid #7FC7FF;
-                background: #23252B;
+                border: 1.5px solid #1976D2;
+                background: #FFFFFF;
             }
             QPushButton {
-                background-color: #7FC7FF;
-                color: #181A20;
+                background-color: #1976D2;
+                color: #fff;
                 border: none;
                 border-radius: 8px;
                 padding: 10px 18px;
@@ -291,27 +291,46 @@ class ScenarioCreator(QWidget):
                 outline: none;
             }
             QPushButton:hover {
-                background-color: #4BA3FA;
+                background-color: #1565C0;
                 color: #fff;
             }
             QPushButton:pressed {
-                background-color: #2566A6;
+                background-color: #0D47A1;
                 color: #fff;
             }
             QPushButton:focus {
-                border: 2px solid #7FC7FF;
+                border: 2px solid #1976D2;
+            }
+            QTabBar::tab {
+                background: #E3E7EF;
+                color: #222;
+                border: 1px solid #D0D0D0;
+                border-bottom: none;
+                border-radius: 8px 8px 0 0;
+                padding: 8px 20px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background: #FFFFFF;
+                color: #1976D2;
+                font-weight: bold;
+            }
+            QTabWidget::pane {
+                border: 1px solid #D0D0D0;
+                border-radius: 0 0 8px 8px;
+                top: -1px;
             }
             QCheckBox {
                 spacing: 8px;
                 font-size: 15px;
             }
             QCheckBox::indicator:checked {
-                background-color: #7FC7FF;
-                border: 1.5px solid #4BA3FA;
+                background-color: #1976D2;
+                border: 1.5px solid #1565C0;
             }
             QScrollArea {
                 border: none;
-                background: #181A20;
+                background: #F7F7FA;
             }
             QFormLayout > QLabel {
                 min-width: 120px;

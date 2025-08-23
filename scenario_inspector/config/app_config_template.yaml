@@ -48,6 +48,8 @@ systems:
     programs_path: "C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\xarm_programs"
     type: "xarm_system"
 
+programs_path: "programs"
+
 ftp:
   server: "ftp://inspection-server"
   username: "ftp_user"

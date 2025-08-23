@@ -33,14 +33,14 @@ class LoginDialog(QDialog):
         self.setModal(True)
         
     def setup_ui(self):
-        """Setup the user interface"""
+        """Setup the user interface with modern style"""
         self.setWindowTitle("AUAS Scenario Inspector - Login")
-        self.setFixedSize(400, 300)
-        
+        self.setFixedSize(400, 320)
+
         # Main layout
         main_layout = QVBoxLayout()
         main_layout.setSpacing(20)
-        
+
         # Title
         title_label = QLabel("Scenario Inspector")
         title_font = QFont()
@@ -49,28 +49,29 @@ class LoginDialog(QDialog):
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title_label)
-        
+
         # Subtitle
         subtitle_label = QLabel("Please enter your credentials")
         subtitle_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(subtitle_label)
-        
+
         # Separator
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
         main_layout.addWidget(separator)
-        
+
         # Email field (changed from username)
         email_layout = QHBoxLayout()
         email_label = QLabel("Email:")
         email_label.setMinimumWidth(80)
         self.email_edit = QLineEdit()
         self.email_edit.setPlaceholderText("Enter your email address")
+        self.email_edit.setStyleSheet("QLineEdit { border-radius: 8px; border: 1px solid #bdbdbd; padding: 6px; background: #fafafa; }")
         email_layout.addWidget(email_label)
         email_layout.addWidget(self.email_edit)
         main_layout.addLayout(email_layout)
-        
+
         # Password field
         password_layout = QHBoxLayout()
         password_label = QLabel("Password:")
@@ -78,24 +79,30 @@ class LoginDialog(QDialog):
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.Password)
         self.password_edit.setPlaceholderText("Enter your password")
+        self.password_edit.setStyleSheet("QLineEdit { border-radius: 8px; border: 1px solid #bdbdbd; padding: 6px; background: #fafafa; }")
         password_layout.addWidget(password_label)
         password_layout.addWidget(self.password_edit)
         main_layout.addLayout(password_layout)
-        
+
         # Buttons
         button_layout = QHBoxLayout()
         self.login_button = QPushButton("Login")
         self.login_button.setDefault(True)
+        self.login_button.setStyleSheet("QPushButton { font-weight: bold; border-radius: 8px; padding: 8px 24px; background-color: #2196F3; color: white; } QPushButton:pressed { background-color: #1976D2; }")
         self.cancel_button = QPushButton("Cancel")
-        
+        self.cancel_button.setStyleSheet("QPushButton { font-weight: bold; border-radius: 8px; padding: 8px 24px; background-color: #bdbdbd; color: #333; } QPushButton:pressed { background-color: #9e9e9e; }")
+
         button_layout.addStretch()
         button_layout.addWidget(self.login_button)
         button_layout.addWidget(self.cancel_button)
         main_layout.addLayout(button_layout)
-        
+
         main_layout.addStretch()
         self.setLayout(main_layout)
-        
+
+        # Add drop shadow effect to dialog
+        self.setStyleSheet("QDialog { background: #fff; border-radius: 12px; }")
+
         # Connect signals
         self.login_button.clicked.connect(self.attempt_login)
         self.cancel_button.clicked.connect(self.reject)
