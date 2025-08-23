@@ -25,7 +25,7 @@ def build_executable():
     print("Building FTP Server executable...")
     
     script_dir = Path(__file__).parent
-    main_script = script_dir / "ftp_server_main.py"
+    main_script = script_dir / "server.py"
     
     if not main_script.exists():
         print(f"Main script not found: {main_script}")

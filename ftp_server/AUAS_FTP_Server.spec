@@ -5,7 +5,7 @@ block_cipher = None
 
 
 a = Analysis(
-    ['c:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\ftp_server\\ftp_server_main.py'],
+    ['c:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\ftp_server\\server.py'],
     pathex=[],
     binaries=[],
     datas=[],
