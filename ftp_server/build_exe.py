@@ -4,12 +4,11 @@ Build script to create FTP Server executable using PyInstaller
 """
 import sys
 import subprocess
-import os
 from pathlib import Path
 
 def install_build_dependencies():
     """Install PyInstaller and dependencies"""
-    print("📦 Installing build dependencies...")
+    print("Installing build dependencies...")
     try:
         subprocess.check_call([
             sys.executable, "-m", "pip", "install", 
@@ -18,18 +17,18 @@ def install_build_dependencies():
         print("✅ Build dependencies installed")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to install dependencies: {e}")
+        print(f"Failed to install dependencies: {e}")
         return False
 
 def build_executable():
     """Build the FTP server executable"""
-    print("🔨 Building FTP Server executable...")
+    print("Building FTP Server executable...")
     
     script_dir = Path(__file__).parent
     main_script = script_dir / "ftp_server_main.py"
     
     if not main_script.exists():
-        print(f"❌ Main script not found: {main_script}")
+        print(f"Main script not found: {main_script}")
         return False
     
     # PyInstaller command
@@ -51,16 +50,16 @@ def build_executable():
         
         exe_path = script_dir / "dist" / "AUAS_FTP_Server.exe"
         if exe_path.exists():
-            print(f"✅ Executable created successfully!")
-            print(f"📍 Location: {exe_path}")
-            print(f"📏 Size: {exe_path.stat().st_size / 1024 / 1024:.1f} MB")
+            print("Executable created successfully!")
+            print(f"Location: {exe_path}")
+            print(f"Size: {exe_path.stat().st_size / 1024 / 1024:.1f} MB")
             return True
         else:
-            print("❌ Executable not found after build")
+            print("Executable not found after build")
             return False
             
     except subprocess.CalledProcessError as e:
-        print(f"❌ Build failed: {e}")
+        print(f"Build failed: {e}")
         return False
 
 def create_readme():
@@ -119,15 +118,15 @@ The inspection engine can upload files using these settings:
     try:
         with open(readme_path, 'w', encoding='utf-8') as f:
             f.write(readme_content)
-        print(f"✅ README created: {readme_path}")
+        print(f"README created: {readme_path}")
         return True
     except Exception as e:
-        print(f"⚠️ Failed to create README: {e}")
+        print(f"Failed to create README: {e}")
         return False
 
 def main():
     """Main build process"""
-    print("🏗️ AUAS FTP Server Build Process")
+    print("AUAS FTP Server Build Process")
     print("=" * 50)
     
     # Step 1: Install dependencies
@@ -142,9 +141,9 @@ def main():
     create_readme()
     
     print("\n" + "=" * 50)
-    print("🎉 Build completed successfully!")
-    print("📁 Check the 'dist' folder for your executable")
-    print("🚀 Double-click AUAS_FTP_Server.exe to start!")
+    print("Build completed successfully!")
+    print("Check the 'dist' folder for your executable")
+    print("Double-click AUAS_FTP_Server.exe to start!")
     print("=" * 50)
     
     return 0

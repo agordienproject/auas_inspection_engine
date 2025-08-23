@@ -1,3 +1,11 @@
+"""
+Scenario Creator
+
+The goal of this app is to help the user to create a scenario file by an interface
+environment.
+Of course, if the scenario_inspector use new properties, the scenario_creator should be updated accordingly.
+
+"""
 import sys
 import os
 import yaml
@@ -9,15 +17,21 @@ from PyQt5.QtCore import Qt
 
 # Subclass widgets to always ignore wheel events
 class NoWheelSpinBox(QSpinBox):
+    """QSpinBox that ignores mouse wheel events."""
     def wheelEvent(self, event):
+        """Ignore mouse wheel events."""
         event.ignore()
 
 class NoWheelDoubleSpinBox(QDoubleSpinBox):
+    """QDoubleSpinBox that ignores mouse wheel events."""
     def wheelEvent(self, event):
+        """Ignore mouse wheel events."""
         event.ignore()
 
 class NoWheelComboBox(QComboBox):
+    """QComboBox that ignores mouse wheel events."""
     def wheelEvent(self, event):
+        """Ignore mouse wheel events."""
         event.ignore()
 
 # Example system actions and parameters (should be loaded from real system modules)
@@ -54,6 +68,7 @@ SYSTEM_ACTIONS = {
 }
 
 class StepWidget(QGroupBox):
+    """Widget representing a single step in the scenario."""
     def __init__(self, parent=None, remove_callback=None):
         super().__init__(parent)
         self.setTitle("Step")
@@ -89,6 +104,7 @@ class StepWidget(QGroupBox):
             self._remove_callback(self)
 
     def update_actions(self):
+        """Update the available actions based on the selected system."""
         system = self.system_combo.currentText()
         self.action_combo.clear()
         if system:
@@ -96,6 +112,7 @@ class StepWidget(QGroupBox):
         self.update_params()
 
     def update_params(self):
+        """Update the available parameters based on the selected action."""
         # Remove old param widgets
         for w in self.param_widgets.values():
             self.param_layout.removeRow(w)
@@ -154,6 +171,7 @@ class StepWidget(QGroupBox):
                 self.param_widgets[param] = widget
 
     def get_data(self):
+        """Collect data from the form widgets."""
         data = {
             'name': self.name_edit.text(),
             'system': self.system_combo.currentText(),
@@ -183,6 +201,7 @@ class StepWidget(QGroupBox):
         return data
 
 class StageWidget(QGroupBox):
+    """Widget representing a single stage in the scenario."""
     def __init__(self, parent=None, remove_callback=None):
         super().__init__(parent)
         self.setTitle("Stage")
@@ -213,11 +232,13 @@ class StageWidget(QGroupBox):
         self._remove_callback = remove_callback
 
     def add_step(self):
+        """Add a new step to the stage."""
         step = StepWidget(remove_callback=self.remove_step)
         self.steps.append(step)
         self.steps_layout.addWidget(step)
 
     def remove_step(self, step):
+        """Remove a step from the stage."""
         self.steps_layout.removeWidget(step)
         self.steps.remove(step)
         step.setParent(None)
@@ -227,6 +248,7 @@ class StageWidget(QGroupBox):
             self._remove_callback(self)
 
     def get_data(self):
+        """Collect data from the stage widgets."""
         return {
             'name': self.name_edit.text(),
             'together': self.together_check.isChecked(),
@@ -235,6 +257,7 @@ class StageWidget(QGroupBox):
         }
 
     def set_data(self, data):
+        """Set data for the stage widgets."""
         self.name_edit.setText(data.get('name', ''))
         self.together_check.setChecked(data.get('together', False))
         self.pause_check.setChecked(data.get('pause', False))
@@ -249,7 +272,7 @@ class StageWidget(QGroupBox):
             self.steps_layout.addWidget(step)
 
 class ScenarioCreator(QWidget):
-
+    """Main widget for creating scenarios."""
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Scenario Creator")
@@ -385,16 +408,19 @@ class ScenarioCreator(QWidget):
         main_layout.addLayout(btn_row)
 
     def add_stage(self):
+        """Add a new stage to the scenario."""
         stage = StageWidget(remove_callback=self.remove_stage)
         self.stages.append(stage)
         self.stages_layout.addWidget(stage)
 
     def remove_stage(self, stage):
+        """Remove a stage from the scenario."""
         self.stages_layout.removeWidget(stage)
         self.stages.remove(stage)
         stage.setParent(None)
 
     def save_scenario(self):
+        """Save the scenario to a YAML file."""
         # Remove tabs from description
         description = self.desc_edit.toPlainText().replace('\t', '').replace('\n', '\n')
         program = {

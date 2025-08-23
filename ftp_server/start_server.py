@@ -5,7 +5,6 @@ Installs dependencies and starts the server
 """
 import subprocess
 import sys
-import os
 
 def install_dependencies():
     """Install required FTP server dependencies"""
@@ -36,10 +35,10 @@ def start_server():
 if __name__ == "__main__":
     print("🏗️ AUAS FTP Server Launcher")
     print("=" * 40)
-    
+
     # Install dependencies first
     if not install_dependencies():
         sys.exit(1)
-    
+
     # Start server
     sys.exit(start_server())
