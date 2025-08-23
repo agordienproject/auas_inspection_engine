@@ -194,6 +194,8 @@ class StageWidget(QGroupBox):
         form.addRow("Stage Name:", self.name_edit)
         self.together_check = QCheckBox("Run steps together")
         form.addRow(self.together_check)
+        self.pause_check = QCheckBox("Pause after this stage")
+        form.addRow(self.pause_check)
         self.layout.addLayout(form)
 
         self.steps = []
@@ -228,8 +230,23 @@ class StageWidget(QGroupBox):
         return {
             'name': self.name_edit.text(),
             'together': self.together_check.isChecked(),
+            'pause': self.pause_check.isChecked(),
             'steps': [s.get_data() for s in self.steps]
         }
+
+    def set_data(self, data):
+        self.name_edit.setText(data.get('name', ''))
+        self.together_check.setChecked(data.get('together', False))
+        self.pause_check.setChecked(data.get('pause', False))
+        # Remove existing steps
+        for step in self.steps[:]:
+            self.remove_step(step)
+        # Add steps from data
+        for step_data in data.get('steps', []):
+            step = StepWidget(remove_callback=self.remove_step)
+            step.set_data(step_data)
+            self.steps.append(step)
+            self.steps_layout.addWidget(step)
 
 class ScenarioCreator(QWidget):
 
@@ -403,10 +420,12 @@ class ScenarioCreator(QWidget):
                 else:
                     step_dict.update({k: v for k, v in step.items() if k != 'step'})
                 steps.append(step_dict)
+            # Add pause property to each stage
             program['program']['stages'].append({
                 'stage': stage_idx,
                 'name': stage_data['name'],
                 'together': stage_data['together'],
+                'pause': stage_data['pause'],
                 'steps': steps
             })
         fname, _ = QFileDialog.getSaveFileName(self, "Save Scenario", os.getcwd(), "YAML Files (*.yaml)")

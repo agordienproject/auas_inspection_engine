@@ -39,6 +39,7 @@ class ProgramExecutionThread(QThread):
     execution_finished = pyqtSignal(bool, str, object)  # Success status, inspection folder path, inspection date
     step_completed = pyqtSignal(str)  # Step name
     progress_percentage = pyqtSignal(int)  # Progress percentage for progress bar
+    pause_signal = pyqtSignal(str)  # Signal emitted when a pause is requested (stage_name)
     
     def __init__(self, program_data, piece_info, config_manager):
         super().__init__()
@@ -46,13 +47,29 @@ class ProgramExecutionThread(QThread):
         self.piece_info = piece_info
         self.config_manager = config_manager
         self.logger = logging.getLogger(__name__)
-        
+
         # Use ScenarioEngine instead of direct SystemManager
         from inspector.scenario_engine import ScenarioEngine
-        self.scenario_engine = ScenarioEngine(config_manager, self._emit_progress)
-        
+        self._pause_event = threading.Event()
+        self._pause_event.set()  # Start unpaused
+
+        # Attach progress and pause callbacks for scenario engine
+        self.scenario_engine = ScenarioEngine(self.config_manager, self._emit_progress)
+        self.scenario_engine.pause_callback = self._on_pause
+        self.scenario_engine.progress_callback_percentage = self._on_progress_percentage
+
+    def _on_progress_percentage(self, percent):
+        self.progress_percentage.emit(percent)
+
         self.inspection_folder = None
         self.inspection_date = None
+
+    def _on_pause(self, stage_name):
+        self._pause_event.clear()
+        self.pause_signal.emit(stage_name)
+        self._pause_event.wait()  # Block until resume_from_pause is called
+    def resume_from_pause(self):
+        self._pause_event.set()
     
     def _emit_progress(self, message: str):
         """Emit progress update to GUI"""
@@ -1538,9 +1555,30 @@ class InspectionMainWindow(QMainWindow):
         self.execution_thread.execution_finished.connect(self.execution_finished)
         self.execution_thread.step_completed.connect(self.step_completed)
         self.execution_thread.progress_percentage.connect(self.update_progress_bar)
-        
+        self.execution_thread.pause_signal.connect(self._on_stage_pause)
         # Start thread
         self.execution_thread.start()
+
+    def _on_stage_pause(self, stage_name):
+        # Show continue button and update progress
+        if not hasattr(self, 'continue_stage_btn'):
+            self.continue_stage_btn = QPushButton("Continue Next Stage")
+            self.continue_stage_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #FFC107; color: #222; }")
+            self.continue_stage_btn.setVisible(False)
+            self.continue_stage_btn.clicked.connect(self._on_continue_stage)
+            # Add to execution tab layout
+            exec_tab = self.tab_widget.widget(2)  # Assuming execution tab is at index 2
+            exec_layout = exec_tab.layout()
+            exec_layout.addWidget(self.continue_stage_btn)
+        self.update_progress(f"Paused after stage '{stage_name}'. Waiting for user to continue...")
+        self.continue_stage_btn.setVisible(True)
+        self.continue_stage_btn.setEnabled(True)
+
+    def _on_continue_stage(self):
+        if self.execution_thread:
+            self.execution_thread.resume_from_pause()
+        if hasattr(self, 'continue_stage_btn'):
+            self.continue_stage_btn.setVisible(False)
     
     def setup_ui(self):
         """Setup the user interface"""
@@ -2155,14 +2193,11 @@ class InspectionDatabaseDialog(QDialog):
         self.setStyleSheet("QDialog { background: #fff; border-radius: 12px; }" )
 
         self.setup_form()
-        
-    def setup_form(self):
-        from PyQt5.QtWidgets import QVBoxLayout, QFormLayout, QComboBox, QCheckBox, QTextEdit, QHBoxLayout
-
-        main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(18)
-        main_layout.setContentsMargins(24, 24, 24, 24)
-
+        # Import and initialize ScenarioEngine after attributes are set
+        from inspector.scenario_engine import ScenarioEngine
+        self.scenario_engine = ScenarioEngine(self.config_manager, self._emit_progress)
+        self.scenario_engine.pause_callback = self._on_pause
+        self.scenario_engine.progress_callback_percentage = self._on_progress_percentage
         # Title
         title_label = QLabel("Inspection Details")
         title_font = QFont()
