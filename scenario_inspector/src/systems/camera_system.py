@@ -821,7 +821,7 @@ class CameraSystem(BaseSystem):
                 self.controller.start_camera()
             
             # Get parameters
-            duration = parameters.get('duration', parameters.get('record_time', 10))  # Support both names
+            duration = parameters.get('duration', parameters.get('duration', 10))  # Support both names
             fps = parameters.get('fps', 30)
             quality = parameters.get('quality', 'medium')  # low, medium, high, ultra
             codec = parameters.get('codec', 'mp4v')  # mp4v, h264, xvid, mjpg

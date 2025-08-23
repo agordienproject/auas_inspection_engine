@@ -8,7 +8,7 @@ api:
 systems:
   scanControl:
     connection_type: "tcp"
-    llt_path: "C:\\scanCONTROL-Windows-SDK\\python_bindings"  # Update this path to your Windows SDK location
+    llt_path: "C:\\scanCONTROL-Windows-SDK\\python_bindings"
     ip: "192.168.3.2"
     timeout: 30
     type: "scanner_system"
@@ -17,11 +17,11 @@ systems:
     device_id: "Intel RealSense D435I"
     timeout: 15
     type: "camera_system"
-    use_realsense_sdk: true  # Use Intel RealSense SDK instead of ROS2
+    use_realsense_sdk: true
     resolution: "ultra"  # Options: "standard" (640x480), "medium" (848x480), "high" (1280x720), "ultra" (1920x1080)
   table:
     connection_type: "serial"
-    port: "COM3"  # Windows COM port - update to your actual port
+    port: "COM3"
     baudrate: 9600
     timeout: 10
     type: "rotating_table"
@@ -39,6 +39,7 @@ systems:
     timeout: 30
     programs_path: "C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\xarm_programs"
     type: "xarm_system"
+programs_path: "programs"
 
 ftp:
   server: "ftp://127.0.0.1"
@@ -61,7 +62,7 @@ logging:
 
 security:
   bcrypt_rounds: 12
-  session_timeout: 3600  # seconds
+  session_timeout: 3600
 
 gui:
   window_title: "AUAS Scenario Inspector"
