@@ -90,6 +90,41 @@ def install_ftp_server_dependencies():
         print(f"Error: {e}")
         return False
 
+
+def install_scenario_creator():
+    """Install the scenario creator GUI dependencies"""
+    print("\nInstalling Scenario Creator...")
+    creator_dir = Path(__file__).parent / "scenario_creator"
+
+    if not creator_dir.exists():
+        print("Warning: scenario_creator directory not found, skipping...")
+        return True
+
+    try:
+        requirements_file = creator_dir / "requirements.txt"
+        if requirements_file.exists():
+            result = subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],
+                                    capture_output=True, text=True)
+            if result.returncode == 0:
+                print("Scenario Creator dependencies installed")
+            else:
+                print("Error installing Scenario Creator dependencies:")
+                print(result.stderr)
+                return False
+        # If there's a setup.py, attempt a local install
+        setup_file = creator_dir / "setup.py"
+        if setup_file.exists():
+            result = subprocess.run([sys.executable, str(setup_file), "install"], capture_output=True, text=True)
+            if result.returncode == 0:
+                print("Scenario Creator installed via setup.py")
+            else:
+                print("Warning: scenario_creator setup.py install failed:")
+                print(result.stderr)
+        return True
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
 def verify_installation():
     """Verify the installation was successful"""
     print("\nVerifying installation...")
@@ -137,9 +172,13 @@ def print_completion_info():
     print("  1. Navigate to ftp_server/")
     print("  2. Run: python server.py")
     print("")
+    print("To start Scenario Creator (authoring tool):")
+    print("  1. Navigate to scenario_creator/")
+    print("  2. Run: python scenario_creator.py")
+    print("")
     print("Configuration files:")
-    print(f"  - Main config: scenario_inspector/config/app_config.yaml")
-    print(f"  - Environment: .env")
+    print("  - Main config: scenario_inspector/config/app_config.yaml")
+    print("  - Environment: .env")
     print("")
     print("For help and documentation, check the README.md files")
     print("="*70)
@@ -158,6 +197,10 @@ def main():
         success = False
     
     if not install_ftp_server_dependencies():
+        success = False
+    
+    # Install Scenario Creator (authoring tool)
+    if not install_scenario_creator():
         success = False
     
     # Verify installation
