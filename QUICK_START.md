@@ -40,6 +40,12 @@ cd ftp_server
 python server.py
 ```
 
+Or you have the exe file version: 
+```bash
+cd ftp_server/dist
+./AUAS_FTP_Server.exe
+```
+
 ## 📋 System Requirements
 
 - **Python**: 3.8 or higher
@@ -61,6 +67,12 @@ python setup.py install
 ### FTP Server
 ```bash
 cd ftp_server
+pip install -r requirements.txt
+```
+
+### Scenario Creator
+```bash
+cd scenario_creator
 pip install -r requirements.txt
 ```
 
@@ -86,6 +98,17 @@ The system supports:
 - **Gantry**: CRI robot controller
 - **XArm**: Universal robot arm
 - **Rotating Table**: Serial/Arduino controlled
+
+## ✍️ Scenario Creator (authoring tool)
+
+After installation you can author inspection scenarios with the Scenario Creator GUI:
+
+```bash
+cd scenario_creator
+python scenario_creator.py
+```
+
+This tool helps you build valid YAML programs that are directly consumable by the Scenario Inspector.
 
 ## 🐛 Troubleshooting
 

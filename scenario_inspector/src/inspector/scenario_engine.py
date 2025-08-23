@@ -239,23 +239,43 @@ class ScenarioEngine:
             for stage in stages:
                 stage_name = stage.get('name', f"Stage {stage.get('stage', 'Unknown')}")
                 together = stage.get('together', False)
-                
+                pause_after = stage.get('pause', False)
+
                 self._emit_progress(f"Executing stage: {stage_name} {'(parallel)' if together else '(sequential)'}")
-                
+
                 # Execute steps in stage
                 steps = stage.get('steps', [])
-                
+
                 if together and len(steps) > 1:
                     # Execute steps in parallel
                     completed_steps += self.execute_steps_parallel(steps, stage_name, completed_steps, total_steps)
                 else:
                     # Execute steps sequentially 
                     completed_steps += self.execute_steps_sequential(steps, completed_steps, total_steps)
-                
+
                 # Calculate progress
                 progress_percent = int((completed_steps / total_steps) * 100) if total_steps > 0 else 100
                 self._emit_progress(f"Stage '{stage_name}' completed. Progress: {progress_percent}% ({completed_steps}/{total_steps})")
+                # Emit progress percentage for progress bar update
+                if hasattr(self, 'progress_callback_percentage') and callable(self.progress_callback_percentage):
+                    self.progress_callback_percentage(progress_percent)
                 self._log_to_inspection('INFO', f"Stage '{stage_name}' completed. {len(steps)} steps executed.")
+
+                # PAUSE: If pause is set, yield control and wait for GUI to resume
+                if pause_after:
+                    # Emit progress bar update before pausing
+                    if hasattr(self, 'progress_callback_percentage') and callable(self.progress_callback_percentage):
+                        self.progress_callback_percentage(progress_percent)
+                    elif hasattr(self.progress_callback, 'emit'):
+                        try:
+                            self.progress_callback.emit(progress_percent)
+                        except Exception:
+                            pass
+                    if hasattr(self, 'pause_callback') and callable(self.pause_callback):
+                        self._emit_progress(f"Paused after stage '{stage_name}'. Waiting for user to continue...")
+                        self.pause_callback(stage_name)
+                    else:
+                        self._emit_progress(f"Paused after stage '{stage_name}', but no pause_callback set. Skipping pause.")
             
             # Create inspection report
             self._emit_progress("Creating inspection report...")

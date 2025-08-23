@@ -1,8 +1,8 @@
 """
 Password utilities for user authentication using bcrypt
 """
-import bcrypt
 import logging
+import bcrypt
 
 class PasswordUtils:
     """Password utilities using bcrypt for secure password hashing"""
@@ -18,7 +18,7 @@ class PasswordUtils:
             hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
             return hashed.decode('utf-8')
         except Exception as e:
-            self.logger.error(f"Password hashing error: {e}")
+            self.logger.error("Password hashing error: %s", e)
             raise
     
     def verify_password(self, password: str, hashed_password: str) -> bool:
@@ -26,5 +26,5 @@ class PasswordUtils:
         try:
             return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
         except Exception as e:
-            self.logger.error(f"Password verification error: {e}")
+            self.logger.error("Password verification error: %s", e)
             return False

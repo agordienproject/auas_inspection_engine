@@ -3,7 +3,7 @@ Login dialog and authentication for Scenario Inspector
 Now using API instead of direct database connection
 """
 import logging
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QPushButton, QMessageBox, QFrame)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QPalette
@@ -14,24 +14,24 @@ from config.config_manager import ConfigManager
 
 class LoginDialog(QDialog):
     """Login dialog for user authentication using API"""
-    
+
     # Signal emitted when user successfully logs in
     user_authenticated = pyqtSignal(User)
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.logger = logging.getLogger(__name__)
-        
+
         # Initialize API connection
         self.config_manager = ConfigManager()
         api_config = self.config_manager.get_api_config()
         self.api_connection = APIConnection(api_config)
-        
+
         self.authenticated_user = None
-        
+
         self.setup_ui()
         self.setModal(True)
-        
+
     def setup_ui(self):
         """Setup the user interface with modern style"""
         self.setWindowTitle("AUAS Scenario Inspector - Login")
@@ -108,38 +108,38 @@ class LoginDialog(QDialog):
         self.cancel_button.clicked.connect(self.reject)
         self.email_edit.returnPressed.connect(self.attempt_login)
         self.password_edit.returnPressed.connect(self.attempt_login)
-    
+
     def attempt_login(self):
         """Attempt to authenticate user via API"""
         email = self.email_edit.text().strip()
         password = self.password_edit.text()
-        
+
         if not email or not password:
             QMessageBox.warning(self, "Login Error", "Please enter both email and password.")
             return
-        
+
         # Disable login button during authentication
         self.login_button.setEnabled(False)
         self.login_button.setText("Authenticating...")
-        
+
         try:
             # Test API connection first
             connection_result = self.api_connection.test_connection()
             if connection_result['status'] != 'available':
                 error_msg = connection_result.get('message', 'Unknown API error')
                 self.logger.error(f"API connection failed: {error_msg}")
-                QMessageBox.critical(self, "API Connection Failed", 
-                                   f"Cannot connect to API server:\n{error_msg}\n\nPlease check your configuration and ensure the API server is running.")
+                QMessageBox.critical(self, "API Connection Failed",
+                    f"Cannot connect to API server:\n{error_msg}\n\nPlease check your configuration and ensure the API server is running.")
                 return
-            
+
             # Authenticate user via API
             auth_result = self.api_connection.authenticate(email, password)
-            
+
             if not auth_result.get('success', False):
                 error_msg = auth_result.get('message', 'Authentication failed')
                 QMessageBox.warning(self, "Login Failed", error_msg)
                 return
-            
+
             # Create user object from API response
             user_data = auth_result.get('user_data', {})
             user = User(
@@ -148,28 +148,28 @@ class LoginDialog(QDialog):
                 email=user_data.get('email', email),
                 role=user_data.get('role', 'user')
             )
-            
+
             # Store API connection for later use
             user.api_connection = self.api_connection
-            
+
             # Authentication successful
             self.authenticated_user = user
             self.user_authenticated.emit(user)
             self.accept()
-            
+
         except Exception as e:
             self.logger.error(f"Login error: {e}")
-            QMessageBox.critical(self, "Login Error", 
+            QMessageBox.critical(self, "Login Error",
                                f"An error occurred during login: {str(e)}")
         finally:
             # Re-enable login button
             self.login_button.setEnabled(True)
             self.login_button.setText("Login")
-    
+
     def get_authenticated_user(self) -> User:
         """Get the authenticated user"""
         return self.authenticated_user
-    
+
     def clear_fields(self):
         """Clear input fields"""
         self.username_edit.clear()
