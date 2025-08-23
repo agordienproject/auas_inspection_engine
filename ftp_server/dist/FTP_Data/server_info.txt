@@ -1,3 +1,0 @@
-AUAS FTP Server - Ready for inspection uploads
-Server started at: 127.0.0.1:21
-Base directory: C:\Users\Agordien\Documents\projects\AUAS\auas_inspection_engine\ftp_server\dist\FTP_Data

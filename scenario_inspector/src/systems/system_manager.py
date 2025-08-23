@@ -16,47 +16,47 @@ from utils.file_manager import FileManager
 
 class SystemManager:
     """Manages all inspection systems and coordinates their execution"""
-    
+
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
         self.logger = logging.getLogger(__name__)
         self.systems: Dict[str, BaseSystem] = {}
         self.current_inspection_folder = None
-        
+
         # Initialize file manager with proper path resolution
         output_config = config_manager.get_output_config()
         output_dir = output_config.get('base_directory', 'output')
-        
+
         # Get the project root directory (parent of src)
         current_dir = os.path.dirname(os.path.abspath(__file__))  # systems directory
         src_dir = os.path.dirname(current_dir)  # src directory
         project_root = os.path.dirname(src_dir)  # scenario_inspector directory
-        
+
         # Resolve output directory relative to project root
         full_output_dir = os.path.join(project_root, output_dir)
         self.file_manager = FileManager(full_output_dir)
-        
+
         self._initialize_systems()
-        
+
     def _initialize_systems(self):
         """Initialize all available systems"""
         systems_config = self.config_manager.get_systems_config()
-        
+
         for system_name, system_config in systems_config.items():
             try:
                 system = self._create_system(system_name, system_config)
                 if system and system.initialize():
                     self.systems[system_name] = system
-                    self.logger.info(f"System {system_name} initialized successfully")
+                    self.logger.info("System %s initialized successfully", system_name)
                 else:
-                    self.logger.warning(f"Failed to initialize system {system_name}")
+                    self.logger.warning("Failed to initialize system %s", system_name)
             except Exception as e:
-                self.logger.error(f"Error initializing system {system_name}: {e}")
-                
+                self.logger.error("Error initializing system %s: %s", system_name, e)
+
     def _create_system(self, system_name: str, system_config: Dict[str, Any]) -> Optional[BaseSystem]:
         """Create a system instance based on its type"""
         system_type = system_config.get('type', '').lower()
-        
+
         if system_type == 'scanner_system' or system_name.lower() == 'scancontrol':
             return ScanControlSystem(system_name, system_config)
         elif system_type == 'camera_system' or system_name.lower() == 'camera':
@@ -68,9 +68,9 @@ class SystemManager:
         elif system_type == 'xarm_system' or system_name.lower() == 'xarm':
             return XarmSystem(system_name, system_config)
         else:
-            self.logger.warning(f"Unknown system type: {system_type} for system: {system_name}")
+            self.logger.warning("Unknown system type: %s for system: %s", system_type, system_name)
             return None
-    
+
     def create_inspection_folder(self, program_data: Dict[str, Any]) -> str:
         """Create inspection folder for the current program execution"""
         try:
@@ -79,92 +79,92 @@ class SystemManager:
             piece_info = program_data.get('piece_info', {})
             piece_name = piece_info.get('name_piece', 'unknown_piece')
             ref_piece = piece_info.get('ref_piece', 'unknown_ref')
-            
+
             # Create inspection folder
             inspection_folder = self.file_manager.create_inspection_folder(
                 program_name, piece_name, ref_piece
             )
-            
+
             # Set the current inspection folder
             self.current_inspection_folder = inspection_folder
-            
+
             # Notify all systems about the inspection folder
             self._set_inspection_folder_for_systems(inspection_folder)
-            
-            self.logger.info(f"Created inspection folder: {inspection_folder}")
+
+            self.logger.info("Created inspection folder: %s", inspection_folder)
             return inspection_folder
-            
+
         except Exception as e:
-            self.logger.error(f"Failed to create inspection folder: {e}")
+            self.logger.error("Failed to create inspection folder: %s", e)
             raise
-    
+
     def _set_inspection_folder_for_systems(self, folder_path: str):
         """Set the inspection folder path for all systems that support it"""
         for system_name, system in self.systems.items():
             try:
                 if hasattr(system, 'set_inspection_folder'):
                     system.set_inspection_folder(folder_path)
-                    self.logger.debug(f"Set inspection folder for {system_name}")
+                    self.logger.debug("Set inspection folder for %s", system_name)
             except Exception as e:
-                self.logger.warning(f"Failed to set inspection folder for {system_name}: {e}")
-    
+                self.logger.warning("Failed to set inspection folder for %s: %s", system_name, e)
+
     def get_current_inspection_folder(self) -> Optional[str]:
         """Get the current inspection folder path"""
         return self.current_inspection_folder
-            
+
     def execute_step(self, step_config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a step on the appropriate system"""
         system_name = step_config.get('system')
-        
+
         if not system_name:
             raise ValueError("Step configuration missing 'system' field")
-            
+
         if system_name not in self.systems:
             raise ValueError(f"System '{system_name}' not available or not initialized")
-            
+
         system = self.systems[system_name]
-        self.logger.info(f"Executing step on system: {system_name}")
-        
+        self.logger.info("Executing step on system: %s", system_name)
+
         try:
             result = system.execute_step(step_config)
-            self.logger.info(f"Step executed successfully on {system_name}")
+            self.logger.info("Step executed successfully on %s", system_name)
             return result
         except Exception as e:
-            self.logger.error(f"Step execution failed on {system_name}: {e}")
+            self.logger.error("Step execution failed on %s: %s", system_name, e)
             raise
-            
+
     def get_system_status(self, system_name: str) -> Dict[str, Any]:
         """Get status of a specific system by testing its connection"""
         if system_name not in self.systems:
             return {'status': 'not_available', 'message': 'System not initialized'}
-            
+
         try:
             # Test actual connection to the system using GUI connection functions
             system = self.systems[system_name]
             return system.test_connection()
         except Exception as e:
-            self.logger.error(f"Error testing system {system_name}: {e}")
-            return {'status': 'error', 'message': f'Connection test failed: {str(e)}'}
-        
+            self.logger.error("Error testing system %s: %s", system_name, e)
+            return {'status': 'error', 'message': 'Connection test failed: %s' % str(e)}
+
     def get_all_systems_status(self) -> Dict[str, Dict[str, Any]]:
         """Get status of all systems by testing their connections"""
         status = {}
         systems_config = self.config_manager.get_systems_config()
-        
+
         for system_name in systems_config.keys():
-            self.logger.info(f"Testing connection for system: {system_name}")
+            self.logger.info("Testing connection for system: %s", system_name)
             status[system_name] = self.get_system_status(system_name)
-            
+
         return status
-        
+
     def shutdown_all_systems(self):
         """Shutdown all systems gracefully"""
         for system_name, system in self.systems.items():
             try:
                 if hasattr(system, 'shutdown'):
                     system.shutdown()
-                    self.logger.info(f"System {system_name} shut down")
+                    self.logger.info("System %s shut down", system_name)
             except Exception as e:
-                self.logger.error(f"Error shutting down system {system_name}: {e}")
-                
+                self.logger.error("Error shutting down system %s: %s", system_name, e)
+
         self.systems.clear()
