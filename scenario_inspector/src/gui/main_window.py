@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QGroupBox, QGridLayout, QMessageBox, QFileDialog, 
                              QLineEdit, QListWidget, QTabWidget, QFrame, QSpacerItem,
                              QSizePolicy, QFormLayout, QScrollArea, QSpinBox, QCheckBox,
-                             QApplication)
+                             QApplication, QDialog)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QPalette
 
@@ -486,9 +486,9 @@ class InspectionMainWindow(QMainWindow):
         self.db_save_btn = QPushButton("💾 Save to Database")
         self.db_save_btn.clicked.connect(self.save_inspection_to_database)
         self.db_save_btn.setEnabled(False)
-        self.db_save_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #2196F3; color: white; }")
+        self.db_save_btn.setStyleSheet("QPushButton { font-weight: bold; border-radius: 8px; padding: 8px 24px; background-color: #2196F3; color: white; } QPushButton:pressed { background-color: #1976D2; }")
         upload_layout.addWidget(self.db_save_btn)
-        
+            
         # Open folder button
         self.open_folder_btn = QPushButton("📁 Open Folder")
         self.open_folder_btn.clicked.connect(self.open_inspection_folder)
@@ -849,13 +849,13 @@ class InspectionMainWindow(QMainWindow):
         # GUI Settings
         gui_group = QGroupBox("GUI Configuration")
         gui_layout = QGridLayout(gui_group)
-        
         gui_config = self.config_manager.get_config().get('gui', {})
-        
+        programs_path = self.config_manager.get_config().get('programs_path', 'programs')
+
         gui_layout.addWidget(QLabel("Window Title:"), 0, 0)
         self.settings_widgets['gui_window_title'] = QLineEdit(str(gui_config.get('window_title', 'AUAS Scenario Inspector')))
         gui_layout.addWidget(self.settings_widgets['gui_window_title'], 0, 1)
-        
+
         gui_layout.addWidget(QLabel("Theme:"), 1, 0)
         self.settings_widgets['gui_theme'] = QComboBox()
         self.settings_widgets['gui_theme'].addItems(['default', 'dark', 'light'])
@@ -863,12 +863,20 @@ class InspectionMainWindow(QMainWindow):
         if current_theme in ['default', 'dark', 'light']:
             self.settings_widgets['gui_theme'].setCurrentText(current_theme)
         gui_layout.addWidget(self.settings_widgets['gui_theme'], 1, 1)
-        
+
         gui_layout.addWidget(QLabel("Default Geometry:"), 2, 0)
         self.settings_widgets['gui_default_geometry'] = QLineEdit(str(gui_config.get('default_geometry', '1200x800')))
         gui_layout.addWidget(self.settings_widgets['gui_default_geometry'], 2, 1)
-        
+
         scroll_layout.addWidget(gui_group)
+
+        # Add programs_path setting as a separate group for clarity
+        programs_group = QGroupBox("Programs Folder")
+        programs_layout = QGridLayout(programs_group)
+        programs_layout.addWidget(QLabel("Programs Folder Path:"), 0, 0)
+        self.settings_widgets['programs_path'] = QLineEdit(str(programs_path))
+        programs_layout.addWidget(self.settings_widgets['programs_path'], 0, 1)
+        scroll_layout.addWidget(programs_group)
         
         # Security Settings
         security_group = QGroupBox("Security Configuration")
@@ -961,7 +969,6 @@ class InspectionMainWindow(QMainWindow):
             config['ftp']['base_path'] = self.settings_widgets['ftp_base_path'].text()
             config['ftp']['passive_mode'] = self.settings_widgets['ftp_passive_mode'].isChecked()
             config['ftp']['passive_mode'] = self.settings_widgets['ftp_passive_mode'].isChecked()
-            config['ftp']['tls_mode'] = self.settings_widgets['ftp_tls_mode'].currentText()
             
             # Logging settings
             if 'logging' not in config:
@@ -977,6 +984,8 @@ class InspectionMainWindow(QMainWindow):
             config['gui']['window_title'] = self.settings_widgets['gui_window_title'].text()
             config['gui']['theme'] = self.settings_widgets['gui_theme'].currentText()
             config['gui']['default_geometry'] = self.settings_widgets['gui_default_geometry'].text()
+            # Programs path (top-level key)
+            config['programs_path'] = self.settings_widgets['programs_path'].text()
             
             # Security settings
             if 'security' not in config:
@@ -1091,6 +1100,41 @@ class InspectionMainWindow(QMainWindow):
             updated_lines = update_yaml_line(updated_lines, 'gui', 'window_title', self.settings_widgets['gui_window_title'].text())
             updated_lines = update_yaml_line(updated_lines, 'gui', 'theme', self.settings_widgets['gui_theme'].currentText())
             updated_lines = update_yaml_line(updated_lines, 'gui', 'default_geometry', self.settings_widgets['gui_default_geometry'].text())
+            # Programs path (top-level key, not in a section)
+            def update_top_level_yaml_line_after_section(lines, key, new_value, after_section='systems'):
+                # Remove all existing top-level programs_path lines
+                new_lines = []
+                for line in lines:
+                    if not (line.strip().startswith(f'{key}:') and (line.startswith('programs_path') or line.lstrip() == line)):
+                        new_lines.append(line)
+                # Find where to insert: after the section (e.g. systems: ...)
+                insert_idx = None
+                for i, line in enumerate(new_lines):
+                    if line.strip().startswith(f'{after_section}:'):
+                        # Find the end of the section (next non-indented line or end of file)
+                        for j in range(i+1, len(new_lines)):
+                            if new_lines[j].strip() == '' or (not new_lines[j].startswith(' ') and not new_lines[j].startswith('\t')):
+                                insert_idx = j
+                                break
+                        else:
+                            insert_idx = len(new_lines)
+                        break
+                if insert_idx is None:
+                    insert_idx = len(new_lines)
+                # Format the new value
+                if isinstance(new_value, str):
+                    if '\\' in new_value and not new_value.startswith(('ftp://', 'http://', 'https://')):
+                        escaped_value = new_value.replace('\\', '\\\\')
+                        formatted_value = f'"{escaped_value}"'
+                    else:
+                        formatted_value = f'"{new_value}"'
+                elif isinstance(new_value, bool):
+                    formatted_value = str(new_value).lower()
+                else:
+                    formatted_value = str(new_value)
+                new_lines.insert(insert_idx, f'{key}: {formatted_value}\n')
+                return new_lines
+            updated_lines = update_top_level_yaml_line_after_section(updated_lines, 'programs_path', self.settings_widgets['programs_path'].text(), after_section='systems')
             
             # Security settings
             updated_lines = update_yaml_line(updated_lines, 'security', 'bcrypt_rounds', self.settings_widgets['security_bcrypt_rounds'].value())
@@ -1329,15 +1373,16 @@ class InspectionMainWindow(QMainWindow):
     def load_available_programs(self):
         """Load available programs from the programs directory"""
         try:
-            programs_dir = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)), 
-                'programs'
-            )
-            
+            programs_dir = self.config_manager.get_config().get('programs_path', 'programs')
+            if not os.path.isabs(programs_dir):
+                scenario_inspector_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                programs_dir = os.path.abspath(os.path.join(scenario_inspector_root, programs_dir))
             if os.path.exists(programs_dir):
                 for file in os.listdir(programs_dir):
                     if file.endswith('.yaml') or file.endswith('.yml'):
                         self.programs_list.addItem(file)
+            else:
+                QMessageBox.warning(self, "Warning", f"Programs directory does not exist:\n{programs_dir}")
         except Exception as e:
             self.logger.error(f"Error loading programs: {e}")
             QMessageBox.warning(self, "Warning", f"Could not load programs: {e}")
@@ -1379,11 +1424,10 @@ class InspectionMainWindow(QMainWindow):
             # Copy file to programs directory
             try:
                 import shutil
-                programs_dir = os.path.join(
-                    os.path.dirname(os.path.dirname(__file__)), 
-                    'programs'
-                )
-                
+                programs_dir = self.config_manager.get_config().get('programs_path', 'programs')
+                if not os.path.isabs(programs_dir):
+                    scenario_inspector_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                    programs_dir = os.path.abspath(os.path.join(scenario_inspector_root, programs_dir))
                 file_name = os.path.basename(file_path)
                 dest_path = os.path.join(programs_dir, file_name)
                 shutil.copy2(file_path, dest_path)
@@ -1404,13 +1448,11 @@ class InspectionMainWindow(QMainWindow):
     def load_program(self, program_file):
         """Load a program file"""
         try:
-            programs_dir = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)), 
-                'programs'
-            )
-            
+            programs_dir = self.config_manager.get_config().get('programs_path', 'programs')
+            if not os.path.isabs(programs_dir):
+                scenario_inspector_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                programs_dir = os.path.abspath(os.path.join(scenario_inspector_root, programs_dir))
             program_path = os.path.join(programs_dir, program_file)
-            
             with open(program_path, 'r') as file:
                 self.current_program = yaml.safe_load(file)
                 
@@ -1499,7 +1541,134 @@ class InspectionMainWindow(QMainWindow):
         
         # Start thread
         self.execution_thread.start()
-        
+    
+    def setup_ui(self):
+        """Setup the user interface"""
+        # Set window properties
+        gui_config = self.config_manager.get_gui_config()
+        self.setWindowTitle(gui_config.get('window_title', 'AUAS Inspection Engine'))
+        self.setGeometry(100, 100, 1200, 800)
+
+        # Apply modern light theme and style
+        self.setStyleSheet('''
+            QWidget {
+                background-color: #F7F7FA;
+                color: #222;
+                font-family: "Segoe UI", "Arial", "sans-serif";
+                font-size: 15px;
+            }
+            QGroupBox {
+                border: 1.5px solid #D0D0D0;
+                border-radius: 12px;
+                margin-top: 16px;
+                background-color: #FFFFFF;
+                padding: 12px;
+            }
+            QGroupBox:title {
+                subcontrol-origin: margin;
+                left: 16px;
+                padding: 0 6px 0 6px;
+                color: #1976D2;
+                font-weight: bold;
+                font-size: 17px;
+            }
+            QLabel {
+                color: #333;
+                font-size: 15px;
+                background: transparent;
+            }
+            QLineEdit, QTextEdit, QComboBox {
+                background: #FAFAFA;
+                border: 1.5px solid #D0D0D0;
+                border-radius: 8px;
+                padding: 7px 10px;
+                color: #222;
+                font-size: 15px;
+            }
+            QLineEdit:focus, QTextEdit:focus, QComboBox:focus {
+                border: 1.5px solid #1976D2;
+                background: #FFFFFF;
+            }
+            QPushButton {
+                background-color: #1976D2;
+                color: #fff;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 18px;
+                font-size: 15px;
+                font-weight: 600;
+                margin: 8px 0;
+                outline: none;
+            }
+            QPushButton:hover {
+                background-color: #1565C0;
+                color: #fff;
+            }
+            QPushButton:pressed {
+                background-color: #0D47A1;
+                color: #fff;
+            }
+            QPushButton:focus {
+                border: 2px solid #1976D2;
+            }
+            QTabBar::tab {
+                background: #E3E7EF;
+                color: #222;
+                border: 1px solid #D0D0D0;
+                border-bottom: none;
+                border-radius: 8px 8px 0 0;
+                padding: 8px 20px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background: #FFFFFF;
+                color: #1976D2;
+                font-weight: bold;
+            }
+            QTabWidget::pane {
+                border: 1px solid #D0D0D0;
+                border-radius: 0 0 8px 8px;
+                top: -1px;
+            }
+            QCheckBox {
+                spacing: 8px;
+                font-size: 15px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #1976D2;
+                border: 1.5px solid #1565C0;
+            }
+            QScrollArea {
+                border: none;
+                background: #F7F7FA;
+            }
+            QFormLayout > QLabel {
+                min-width: 120px;
+            }
+        ''')
+
+        # Create central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        # Main layout
+        main_layout = QVBoxLayout(central_widget)
+        # Header
+        self.create_header(main_layout)
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        main_layout.addWidget(self.tab_widget)
+        # Create tabs
+        self.create_piece_info_tab()
+        self.create_program_tab()
+        self.create_execution_tab()
+        self.create_status_tab()
+        self.create_settings_tab()
+        # Status bar
+        if self.user:
+            self.statusBar().showMessage(f"Logged in as: {self.user.pseudo}")
+        else:
+            self.statusBar().showMessage("Guest mode - Login to access database features")
+
     def stop_execution(self):
         """Stop program execution"""
         if self.execution_thread and self.execution_thread.isRunning():
@@ -1972,50 +2141,62 @@ class InspectionMainWindow(QMainWindow):
             event.accept()
 
 
-class InspectionDatabaseDialog(QMessageBox):
-    """Dialog for saving inspection data to database"""
-    
+class InspectionDatabaseDialog(QDialog):
+    """Dialog for saving inspection data to database (modern, larger, QDialog-based)"""
+
     def __init__(self, inspection_data, parent=None):
         super().__init__(parent)
         self.inspection_data = inspection_data
         self.result_data = None
-        
+
         self.setWindowTitle("Save Inspection to Database")
-        self.setIcon(QMessageBox.Question)
-        self.setText("Please fill in the inspection details:")
-        
-        # Create custom widget for the form
+        self.setModal(True)
+        self.setFixedSize(800, 600)
+        self.setStyleSheet("QDialog { background: #fff; border-radius: 12px; }" )
+
         self.setup_form()
         
     def setup_form(self):
-        """Setup the form fields"""
-        from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QComboBox, QCheckBox, QTextEdit
-        
-        # Create main widget
-        widget = QWidget()
-        main_layout = QVBoxLayout(widget)
-        
-        # Create form layout
+        from PyQt5.QtWidgets import QVBoxLayout, QFormLayout, QComboBox, QCheckBox, QTextEdit, QHBoxLayout
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(18)
+        main_layout.setContentsMargins(24, 24, 24, 24)
+
+        # Title
+        title_label = QLabel("Inspection Details")
+        title_font = QFont()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        title_label.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(title_label)
+
+        # Form layout
         form_layout = QFormLayout()
-        
+        form_layout.setLabelAlignment(Qt.AlignRight)
+        form_layout.setFormAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        form_layout.setHorizontalSpacing(24)
+        form_layout.setVerticalSpacing(12)
+
         # Name of piece (read-only, pre-filled)
         self.name_piece_edit = QLineEdit(self.inspection_data.get('piece_name', ''))
         self.name_piece_edit.setReadOnly(True)
-        self.name_piece_edit.setStyleSheet("background-color: #f0f0f0;")
+        self.name_piece_edit.setStyleSheet("background-color: #f0f0f0; border-radius: 6px; padding: 4px;")
         form_layout.addRow("Piece Name:", self.name_piece_edit)
-        
+
         # Reference of piece (read-only, pre-filled)
         self.ref_piece_edit = QLineEdit(self.inspection_data.get('ref_piece', ''))
         self.ref_piece_edit.setReadOnly(True)
-        self.ref_piece_edit.setStyleSheet("background-color: #f0f0f0;")
+        self.ref_piece_edit.setStyleSheet("background-color: #f0f0f0; border-radius: 6px; padding: 4px;")
         form_layout.addRow("Piece Reference:", self.ref_piece_edit)
-        
+
         # Program name (read-only, pre-filled)
         self.program_name_edit = QLineEdit(self.inspection_data.get('program_name', ''))
         self.program_name_edit.setReadOnly(True)
-        self.program_name_edit.setStyleSheet("background-color: #f0f0f0;")
+        self.program_name_edit.setStyleSheet("background-color: #f0f0f0; border-radius: 6px; padding: 4px;")
         form_layout.addRow("Program Name:", self.program_name_edit)
-        
+
         # State dropdown (user selectable)
         self.state_combo = QComboBox()
         self.state_combo.addItems([
@@ -2029,59 +2210,55 @@ class InspectionDatabaseDialog(QMessageBox):
         ])
         self.state_combo.setCurrentText("Good")  # Default selection
         form_layout.addRow("State:", self.state_combo)
-        
+
         # Checkboxes for conditions
         self.dents_checkbox = QCheckBox("Has dents")
         form_layout.addRow("Dents:", self.dents_checkbox)
-        
+
         self.corrosions_checkbox = QCheckBox("Has corrosions")
         form_layout.addRow("Corrosions:", self.corrosions_checkbox)
-        
+
         self.scratches_checkbox = QCheckBox("Has scratches")
         form_layout.addRow("Scratches:", self.scratches_checkbox)
-        
+
         # Details text area (optional)
         self.details_text = QTextEdit()
-        self.details_text.setMaximumHeight(80)
+        self.details_text.setMinimumHeight(80)
         self.details_text.setPlaceholderText("Optional details about the inspection...")
+        self.details_text.setStyleSheet("border-radius: 6px; border: 1px solid #bdbdbd; background: #fafafa; padding: 6px;")
         form_layout.addRow("Details:", self.details_text)
-        
+
         # Inspection date (read-only, pre-filled)
         inspection_date = self.inspection_data.get('inspection_date', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         self.inspection_date_edit = QLineEdit(inspection_date)
         self.inspection_date_edit.setReadOnly(True)
-        self.inspection_date_edit.setStyleSheet("background-color: #f0f0f0;")
+        self.inspection_date_edit.setStyleSheet("background-color: #f0f0f0; border-radius: 6px; padding: 4px;")
         form_layout.addRow("Inspection Date:", self.inspection_date_edit)
-        
+
         # FTP path (read-only, will be filled after FTP upload)
         self.ftp_path_edit = QLineEdit(self.inspection_data.get('inspection_path', ''))
         self.ftp_path_edit.setReadOnly(True)
-        self.ftp_path_edit.setStyleSheet("background-color: #f0f0f0;")
+        self.ftp_path_edit.setStyleSheet("background-color: #f0f0f0; border-radius: 6px; padding: 4px;")
         self.ftp_path_edit.setPlaceholderText("Upload to FTP first to get the path")
         form_layout.addRow("Inspection Path:", self.ftp_path_edit)
-        
+
         main_layout.addLayout(form_layout)
-        
+
         # Add custom buttons
         button_layout = QHBoxLayout()
-        
+        button_layout.addStretch()
         self.save_btn = QPushButton("💾 Save to Database")
-        self.save_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #4CAF50; color: white; }")
+        self.save_btn.setStyleSheet("QPushButton { font-weight: bold; border-radius: 8px; padding: 10px 32px; background-color: #4CAF50; color: white; } QPushButton:pressed { background-color: #388E3C; }")
         self.save_btn.clicked.connect(self.save_to_database)
         button_layout.addWidget(self.save_btn)
-        
+
         self.cancel_btn = QPushButton("❌ Cancel")
-        self.cancel_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #f44336; color: white; }")
+        self.cancel_btn.setStyleSheet("QPushButton { font-weight: bold; border-radius: 8px; padding: 10px 32px; background-color: #f44336; color: white; } QPushButton:pressed { background-color: #b71c1c; }")
         self.cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_btn)
-        
+        button_layout.addStretch()
+
         main_layout.addLayout(button_layout)
-        
-        # Set the custom widget as the message box's layout
-        self.layout().addWidget(widget, 1, 0, 1, self.layout().columnCount())
-        
-        # Remove default buttons
-        self.setStandardButtons(QMessageBox.NoButton)
     
     def update_ftp_path(self, ftp_path):
         """Update the FTP path field after successful upload"""

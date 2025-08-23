@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Any, Optional
 from config.config_manager import ConfigManager
 from systems.base_system import BaseSystem
-from systems.scanner_system import ScannerSystem
+from systems.scan_control_system import ScanControlSystem
 from systems.gantry_system import GantrySystem
 from systems.table_system import TableSystem
 from systems.camera_system import CameraSystem
@@ -58,7 +58,7 @@ class SystemManager:
         system_type = system_config.get('type', '').lower()
         
         if system_type == 'scanner_system' or system_name.lower() == 'scancontrol':
-            return ScannerSystem(system_name, system_config)
+            return ScanControlSystem(system_name, system_config)
         elif system_type == 'camera_system' or system_name.lower() == 'camera':
             return CameraSystem(system_name, system_config)
         elif system_type == 'rotating_table' or system_name.lower() == 'table':

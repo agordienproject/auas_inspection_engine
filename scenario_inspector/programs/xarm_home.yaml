@@ -1,0 +1,26 @@
+program:
+  name: "xarm_simple"
+  description: "Return home for the xarm system"
+  piece_info:
+    name_piece: "Landing gear"
+    ref_piece: "0054-0544"
+  
+  stages:
+    - stage: 1
+      name: "xarm"
+      together: false        
+      steps:
+        - step: 1
+          name: "initialize_xarm"
+          system: "xarm"
+          action: "move_to_position"
+          x: 220.8
+          y: -161.6
+          z: 215.7
+          roll: -179
+          pitch: -54.8
+          yaw: -35.7
+        - step: 2
+          name: "home-xarm"
+          system: "xarm"
+          action: "home"

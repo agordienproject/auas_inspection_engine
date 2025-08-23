@@ -1,0 +1,15 @@
+program:
+  name: "camera_depth"
+  description: "Capture depth image using Intel RealSense camera"
+  
+  stages:
+    - stage: 1
+      name: "camera_depth"
+      together: false    
+      steps:
+        - step: 1
+          name: "camera_depth"
+          system: "camera"
+          action: "capture_depth"
+          parameters:
+            filename: "depth_image.png"
