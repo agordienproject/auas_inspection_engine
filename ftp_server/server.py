@@ -9,9 +9,15 @@ import logging
 from pathlib import Path
 
 # Load environment variables
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+from dotenv import load_dotenv
+# Try to load .env from both project root and current working directory
+project_root_env = Path(__file__).parent.parent / ".env"
+cwd_env = Path.cwd() / ".env"
+if project_root_env.exists():
+    load_dotenv(dotenv_path=project_root_env, override=True)
+if cwd_env.exists() and cwd_env != project_root_env:
+    load_dotenv(dotenv_path=cwd_env, override=True)
 
 try:
     from pyftpdlib.authorizers import DummyAuthorizer
