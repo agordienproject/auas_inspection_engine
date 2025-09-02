@@ -12,7 +12,7 @@ def install_build_dependencies():
     try:
         subprocess.check_call([
             sys.executable, "-m", "pip", "install", 
-            "pyinstaller", "pyftpdlib", "--quiet"
+            "-r", "requirements.txt"
         ])
         print("✅ Build dependencies installed")
         return True

@@ -1,4 +1,3 @@
-ros2gui-env
 img/*
 
 scanCONTROL-Linux-SDK-1-0-1
@@ -7,11 +6,6 @@ cri_lib/__pycache__/cri_controller.cpython-310.pyc
 cri_lib/__pycache__/cri_errors.cpython-310.pyc
 cri_lib/__pycache__/cri_protocol_parser.cpython-310.pyc
 cri_lib/__pycache__/robot_state.cpython-310.pyc
-ros2gui/__pycache__/gantry_config.cpython-310.pyc
-ros2gui/__pycache__/main_window.cpython-310.pyc
-ros2gui/__pycache__/scanner_config.cpython-310.pyc
-ros2gui/__pycache__/utils.cpython-310.pyc
-ros2gui/__pycache__/xarm_config.cpython-310.pyc
 
 # Ignore pycache files
 **/__pycache__/*
@@ -21,8 +15,13 @@ ros2gui/__pycache__/xarm_config.cpython-310.pyc
 logs/
 **/logs/
 
-# Ignore output data
+# Ignore output and build folders
 output/
-
 build/
-auas_scenario_inspector.egg-info/
+
+# Ignore configuration files
+scenario_inspector/config/app_config.yaml
+.env
+
+# Remove spec files
+*.spec
