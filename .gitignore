@@ -25,4 +25,6 @@ logs/
 output/
 
 build/
-auas_scenario_inspector.egg-info/
+
+scenario_inspector/config/app_config.yaml
+.env
