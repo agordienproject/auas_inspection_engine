@@ -38,7 +38,7 @@ class AUASFTPServer:
 
     def __init__(self, host=None, port=None, base_path=None):
         # Load from environment variables if not provided
-        self.host = host or os.getenv("FTP_HOST", "127.0.0.1")
+        self.host = host or os.getenv("FTP_HOST", "0.0.0.0")
         self.port = int(port or os.getenv("FTP_PORT", 21))
         self.base_path = Path(base_path or os.getenv("FTP_BASE_PATH", r"C:\\Users\\Agordien\\Documents\\projects\\AUAS\\FTP"))
         self.server = None

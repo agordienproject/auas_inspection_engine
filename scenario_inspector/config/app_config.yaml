@@ -31,13 +31,13 @@ systems:
     ip: "127.0.0.1"
     port: 3921
     timeout: 20
-    programs_path: "C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\gantry_programs"
+    programs_path: "C:\\Users\\BrightSky\\Documents\\PROJECTS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\gantry_programs"
     type: "gantry_system"
   xarm:
     connection_type: "tcp"
     ip: "192.168.1.222"
     timeout: 30
-    programs_path: "C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\xarm_programs"
+    programs_path: "C:\\Users\\BrightSky\\Documents\\PROJECTS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\xarm_programs"
     type: "xarm_system"
 programs_path: "programs"
 
