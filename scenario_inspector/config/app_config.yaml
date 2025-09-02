@@ -27,9 +27,9 @@ systems:
     type: "rotating_table"
   gantry:
     connection_type: "tcp"
-    # ip: "192.168.3.11"
-    ip: "127.0.0.1"
-    port: 3921
+    # ip: "127.0.0.1"
+    ip: "192.168.3.11"
+    port: 3920
     timeout: 20
     programs_path: "C:\\Users\\BrightSky\\Documents\\PROJECTS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\gantry_programs"
     type: "gantry_system"
@@ -42,7 +42,7 @@ systems:
 programs_path: "programs"
 
 ftp:
-  server: "ftp://127.0.0.1"
+  server: "ftp://10.90.143.34"
   username: "inspection_engine"
   password: "admin"
   base_path: "/inspections"

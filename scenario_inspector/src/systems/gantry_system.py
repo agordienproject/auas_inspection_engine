@@ -206,37 +206,23 @@ class GantryController:
         try:
             logger.info("Starting program on gantry (wait_for_completion=%s)", wait_for_completion)
 
-            # Register for EXECEND if we want to wait for completion
-            if wait_for_completion:
-                logger.debug("Registering for EXECEND message to wait for program completion")
-                self.controller._register_answer("EXECEND")
+            # Use the direct function to start the program, not a command string
+            result = self.controller.start_programm()
 
-            # Start the program
-            command = "CMD StartProgram"
-            msg_id = self.controller._send_command(command, True)
-
-            if msg_id is None:
-                logger.error("Failed to send start program command")
+            if not result:
+                logger.error("Failed to start program using direct function")
                 return False
 
-            # Wait for command acknowledgment
-            error_msg = self.controller._wait_for_answer("%s", timeout=10.0)
-            if error_msg is not None:
-                logger.error("Error starting program: %s", error_msg)
-                return False
-
-            logger.info("Program start command acknowledged")
+            logger.info("Program started using direct function")
 
             # If we should wait for completion, wait for EXECEND
             if wait_for_completion:
                 logger.info("Waiting for program completion (timeout: %ss)", timeout)
-
-                # Wait for EXECEND message
+                self.controller._register_answer("EXECEND")
                 error_msg = self.controller._wait_for_answer("EXECEND", timeout=timeout)
                 if error_msg is not None:
                     logger.warning("Program execution error or timeout: %s", error_msg)
                     return False
-
                 logger.info("Program completed successfully")
 
             return True
