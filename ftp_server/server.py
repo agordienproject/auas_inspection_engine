@@ -9,9 +9,15 @@ import logging
 from pathlib import Path
 
 # Load environment variables
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
+from dotenv import load_dotenv
+# Try to load .env from both project root and current working directory
+project_root_env = Path(__file__).parent.parent / ".env"
+cwd_env = Path.cwd() / ".env"
+if project_root_env.exists():
+    load_dotenv(dotenv_path=project_root_env, override=True)
+if cwd_env.exists() and cwd_env != project_root_env:
+    load_dotenv(dotenv_path=cwd_env, override=True)
 
 try:
     from pyftpdlib.authorizers import DummyAuthorizer
@@ -32,7 +38,7 @@ class AUASFTPServer:
 
     def __init__(self, host=None, port=None, base_path=None):
         # Load from environment variables if not provided
-        self.host = host or os.getenv("FTP_HOST", "127.0.0.1")
+        self.host = host or os.getenv("FTP_HOST", "0.0.0.0")
         self.port = int(port or os.getenv("FTP_PORT", 21))
         self.base_path = Path(base_path or os.getenv("FTP_BASE_PATH", r"C:\\Users\\Agordien\\Documents\\projects\\AUAS\\FTP"))
         self.server = None

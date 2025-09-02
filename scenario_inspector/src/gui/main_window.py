@@ -815,7 +815,7 @@ class InspectionMainWindow(QMainWindow):
             stage_name: The name of the stage that just completed.
         """
         # Show continue button and update progress
-        if not hasattr(self, 'continue_stage_btn'):
+        if self.continue_stage_btn is None:
             self.continue_stage_btn = QPushButton("Continue Next Stage")
             self.continue_stage_btn.setStyleSheet("QPushButton { font-weight: bold; padding: 8px; background-color: #FFC107; color: #222; }")
             self.continue_stage_btn.setVisible(False)
