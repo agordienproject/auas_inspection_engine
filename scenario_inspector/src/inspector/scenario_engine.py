@@ -202,39 +202,43 @@ class ScenarioEngine:
     def execute_scenario_from_gui(self, program_data: Dict[str, Any], piece_info: Dict[str, Any]) -> bool:
         """Execute scenario loaded from GUI data with progress tracking"""
         try:
+            # Explicitly (re)initialize all systems before scenario execution
+            if hasattr(self.system_manager, '_initialize_systems'):
+                self.system_manager._initialize_systems()
+
             # Load scenario data
             if not self.load_scenario_from_data(program_data, piece_info):
                 return False
-            
+
             self._emit_progress("Starting program execution...")
-            
+
             # Create inspection folder
             program_data_for_folder = {
                 'name': program_data.get('program', {}).get('name', 'unknown_program'),
                 'piece_info': piece_info
             }
-            
+
             self.current_inspection_folder = self.system_manager.create_inspection_folder(program_data_for_folder)
             self.current_inspection_date = datetime.now()
             self._emit_progress(f"Created inspection folder: {os.path.basename(self.current_inspection_folder)}")
-            
+
             # Set up inspection-specific logger
             program_name = program_data.get('program', {}).get('name', 'unknown_program')
             log_path = self._setup_inspection_logger(self.current_inspection_folder, program_name)
             if log_path:
                 self._emit_progress(f"Inspection log created: {os.path.basename(log_path)}")
-            
+
             # Log initial inspection info
             self._log_to_inspection('INFO', f"Program: {program_name}")
             self._log_to_inspection('INFO', f"Piece: {piece_info.get('name_piece', 'Unknown')}")
             self._log_to_inspection('INFO', f"Reference: {piece_info.get('ref_piece', 'Unknown')}")
             self._log_to_inspection('INFO', f"Inspection folder: {self.current_inspection_folder}")
-            
+
             # Get program stages
             stages = program_data.get('program', {}).get('stages', [])
             total_steps = sum(len(stage.get('steps', [])) for stage in stages)
             completed_steps = 0
-            
+
             # Execute all stages
             for stage in stages:
                 stage_name = stage.get('name', f"Stage {stage.get('stage', 'Unknown')}")

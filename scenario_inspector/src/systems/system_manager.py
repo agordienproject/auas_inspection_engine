@@ -36,7 +36,7 @@ class SystemManager:
         full_output_dir = os.path.join(project_root, output_dir)
         self.file_manager = FileManager(full_output_dir)
 
-        self._initialize_systems()
+    # self._initialize_systems()  # Removed: Only initialize systems on refresh or scenario execution
 
     def _initialize_systems(self):
         """Initialize all available systems"""
