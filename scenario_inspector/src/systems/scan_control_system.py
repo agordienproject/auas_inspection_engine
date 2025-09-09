@@ -54,6 +54,11 @@ llt = _import_pyllt()
 import ctypes as ct
 
 class ScanControlSystem(BaseSystem):
+    def set_inspection_folder(self, folder_path: str):
+        """Set the current inspection folder path for output"""
+        self.current_inspection_folder = folder_path
+        self.logger.info("ScanControl system inspection folder set to: %s", folder_path)
+        self.logger.debug("Inspection folder absolute=%s, exists=%s", os.path.abspath(folder_path), os.path.exists(folder_path))
     """Scan Control System for laser scanning operations"""
     def __init__(self, name: str, config: Dict[str, Any]):
         self.logger = logging.getLogger(__name__)
@@ -85,7 +90,12 @@ class ScanControlSystem(BaseSystem):
             self.logger.debug("test_connection: initialize() succeeded; proceeding to cleanup()")
             self.cleanup()
             self.logger.debug("[DEBUG] Connection test passed successfully")
-            return {'status': 'success', 'message': 'ScanControl system connection test passed.'}
+            # Use 'available' to align with UI green check expectations
+            return {
+                'status': 'available',
+                'message': 'ScanControl system connection test passed.',
+                'details': {'ip': self.config.get('ip', 'unknown')}
+            }
         except Exception as e:
             self.logger.debug("[DEBUG] Exception in test_connection(): %s", e)
             self.logger.error("ScanControl connection test failed: %s", e)
@@ -93,6 +103,8 @@ class ScanControlSystem(BaseSystem):
 
     def initialize(self) -> bool:
         self.logger.debug("[DEBUG] ScanControlSystem.initialize() called")
+        # Always clean up any previous connection before initializing
+        self.cleanup()
         try:
             ip_address = self.config.get('ip', 'unknown')
             self.logger.debug("[DEBUG] Initializing ScanControl at IP: %s", ip_address)
@@ -114,7 +126,8 @@ class ScanControlSystem(BaseSystem):
             self.logger.debug("initialize: interfaces status=%s, candidates=%s", res, iface_list)
             # 3. Set first found interface
             self.logger.debug("[DEBUG] Setting device interface to: %s", available_interfaces[0])
-            llt.set_device_interface(self.hLLT, available_interfaces[0])
+            # Pass integer for third argument, not string IP
+            llt.set_device_interface(self.hLLT, available_interfaces[0], 0)
             self.logger.debug("[DEBUG] initialize: set_device_interface to %s", available_interfaces[0])
             self.logger.debug("initialize: set_device_interface to %s", available_interfaces[0])
             # 4. Connect
@@ -122,7 +135,7 @@ class ScanControlSystem(BaseSystem):
             conn_code = llt.connect(self.hLLT)
             self.logger.debug("[DEBUG] initialize: connect() returned code=%s", conn_code)
             self.logger.debug("initialize: connect() returned code=%s", conn_code)
-            if conn_code != 0:
+            if conn_code != 1:
                 self.logger.debug("[DEBUG] Failed to connect to ScanControl device, code: %s", conn_code)
                 self.logger.error("Failed to connect to ScanControl device")
                 self.is_initialized = False
@@ -173,6 +186,10 @@ class ScanControlSystem(BaseSystem):
         recording_time = step_config.get('recording_time', 10)
         saving_file = step_config.get('saving_file', False)
         output_path = step_config.get('path', 'scan_data')
+        # Use inspection folder if output_path is not absolute
+        if hasattr(self, 'current_inspection_folder') and self.current_inspection_folder:
+            if not os.path.isabs(output_path):
+                output_path = os.path.join(self.current_inspection_folder, output_path)
         self.logger.debug("[DEBUG] ScanControlSystem.execute_step() called with step_name='%s'", step_name)
         self.logger.debug("[DEBUG] Step parameters: action=%s, recording_time=%s, saving_file=%s, output_path=%s",
               action, recording_time, saving_file, output_path)
@@ -188,14 +205,17 @@ class ScanControlSystem(BaseSystem):
         try:
             if action == "recording_data":
                 self.logger.debug("[DEBUG] Executing recording_data action")
-                return self._execute_data_recording(parameters, recording_time, saving_file, output_path)
+                result = self._execute_data_recording(parameters, recording_time, saving_file, output_path)
             else:
                 self.logger.debug("[DEBUG] Unsupported scan action %s", action)
                 raise ValueError(f"Unsupported scan action: {action}")
         except Exception as e:
             self.logger.debug("[DEBUG] Exception in execute_step(): %s", e)
             self.logger.error("ScanControl step execution failed: %s", e)
-            return {'success': False, 'error': str(e), 'step_name': step_name}
+            result = {'success': False, 'error': str(e), 'step_name': step_name}
+        finally:
+            self.cleanup()
+        return result
 
     def _execute_data_recording(self, parameters: Dict[str, Any], recording_time: int, saving_file: bool, output_path: str) -> Dict[str, Any]:
         self.logger.debug("[DEBUG] ScanControlSystem._execute_data_recording() called")
@@ -253,34 +273,33 @@ class ScanControlSystem(BaseSystem):
             'file_saved': False,
             'output_path': None
         }
-        # Save data if requested
-        if saving_file:
-            self.logger.debug("[DEBUG] Saving scan data to file...")
+
+        self.logger.debug("[DEBUG] Saving scan data to file...")
+        try:
+            self.logger.debug("[DEBUG] Creating output directory: %s", output_path)
+            os.makedirs(output_path, exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            filename = "scan_data_%s.csv" % timestamp
+            file_path = os.path.join(output_path, filename)
+            self.logger.debug("[DEBUG] Writing data to file: %s", file_path)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write("# x,z,intensity\n")
+                for profile in profiles:
+                    for j in range(self.resolution):
+                        f.write("%s,%s,%s\n" % (profile['x'][j], profile['z'][j], profile['intensities'][j]))
+            result['file_saved'] = True
+            result['output_path'] = file_path
             try:
-                self.logger.debug("[DEBUG] Creating output directory: %s", output_path)
-                os.makedirs(output_path, exist_ok=True)
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
-                filename = "scan_data_%s.csv" % timestamp
-                file_path = os.path.join(output_path, filename)
-                self.logger.debug("[DEBUG] Writing data to file: %s", file_path)
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write("# x,z,intensity\n")
-                    for profile in profiles:
-                        for j in range(self.resolution):
-                            f.write("%s,%s,%s\n" % (profile['x'][j], profile['z'][j], profile['intensities'][j]))
-                result['file_saved'] = True
-                result['output_path'] = file_path
-                try:
-                    size_mb = os.path.getsize(file_path) / (1024*1024)
-                except Exception:
-                    size_mb = 0
-                self.logger.debug("[DEBUG] Scan data saved successfully, file size: %.2f MB", size_mb)
-                self.logger.info("Scan data saved to: %s", file_path)
-                self.logger.debug("Saved file size: %.2f MB", size_mb)
-            except Exception as e:
-                self.logger.debug("[DEBUG] Failed to save scan data: %s", e)
-                self.logger.error("Failed to save scan data: %s", e)
-                result['save_error'] = str(e)
+                size_mb = os.path.getsize(file_path) / (1024*1024)
+            except Exception:
+                size_mb = 0
+            self.logger.debug("[DEBUG] Scan data saved successfully, file size: %.2f MB", size_mb)
+            self.logger.info("Scan data saved to: %s", file_path)
+            self.logger.debug("Saved file size: %.2f MB", size_mb)
+        except Exception as e:
+            self.logger.debug("[DEBUG] Failed to save scan data: %s", e)
+            self.logger.error("Failed to save scan data: %s", e)
+            result['save_error'] = str(e)
         else:
             self.logger.debug("[DEBUG] Saving file not requested, skipping...")
         self.logger.debug("[DEBUG] Data recording scan completed successfully")

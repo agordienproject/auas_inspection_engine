@@ -36,7 +36,7 @@ class SystemManager:
         full_output_dir = os.path.join(project_root, output_dir)
         self.file_manager = FileManager(full_output_dir)
 
-        self._initialize_systems()
+    # self._initialize_systems()  # Removed: Only initialize systems on refresh or scenario execution
 
     def _initialize_systems(self):
         """Initialize all available systems"""
@@ -136,7 +136,21 @@ class SystemManager:
     def get_system_status(self, system_name: str) -> Dict[str, Any]:
         """Get status of a specific system by testing its connection"""
         if system_name not in self.systems:
-            return {'status': 'not_available', 'message': 'System not initialized'}
+            # Lazy-create system object (without full initialize) so test_connection can probe
+            systems_config = self.config_manager.get_systems_config()
+            system_cfg = systems_config.get(system_name)
+            if not system_cfg:
+                return {'status': 'not_available', 'message': 'System not defined in config'}
+            try:
+                self.logger.debug("Lazy-creating system '%s' for status probe", system_name)
+                system = self._create_system(system_name, system_cfg)
+                if system:
+                    self.systems[system_name] = system  # store uninitialized instance
+                else:
+                    return {'status': 'not_available', 'message': 'Unsupported system type'}
+            except Exception as e:
+                self.logger.error("Failed to create system %s for status: %s", system_name, e)
+                return {'status': 'error', 'message': f'Creation failed: {e}'}
 
         try:
             # Test actual connection to the system using GUI connection functions
