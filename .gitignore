@@ -26,3 +26,5 @@ output/
 
 build/
 auas_scenario_inspector.egg-info/
+
+.env
