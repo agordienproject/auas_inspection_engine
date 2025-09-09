@@ -90,7 +90,12 @@ class ScanControlSystem(BaseSystem):
             self.logger.debug("test_connection: initialize() succeeded; proceeding to cleanup()")
             self.cleanup()
             self.logger.debug("[DEBUG] Connection test passed successfully")
-            return {'status': 'success', 'message': 'ScanControl system connection test passed.'}
+            # Use 'available' to align with UI green check expectations
+            return {
+                'status': 'available',
+                'message': 'ScanControl system connection test passed.',
+                'details': {'ip': self.config.get('ip', 'unknown')}
+            }
         except Exception as e:
             self.logger.debug("[DEBUG] Exception in test_connection(): %s", e)
             self.logger.error("ScanControl connection test failed: %s", e)
