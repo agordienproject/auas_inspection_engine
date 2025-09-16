@@ -1,5 +1,5 @@
 api:
-  url: "127.0.0.1:3000/api"
+  url: "192.168.3.1:3000/api"
   login_endpoint: "/auth/login"
   inspection_endpoint: "/inspections"
   timeout: 30
@@ -27,8 +27,8 @@ systems:
     type: "rotating_table"
   gantry:
     connection_type: "tcp"
-    # ip: "192.168.3.11"
-    ip: "127.0.0.1"
+    # ip: "127.0.0.1"
+    ip: "192.168.3.11"
     port: 3921
     timeout: 20
     programs_path: "C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\gantry_programs"
@@ -42,7 +42,7 @@ systems:
 programs_path: "programs"
 
 ftp:
-  server: "ftp://10.90.143.34"
+  server: "ftp://192.168.3.1"
   username: "inspection_engine"
   password: "admin"
   base_path: "/inspections"

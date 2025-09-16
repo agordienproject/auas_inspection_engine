@@ -7,6 +7,7 @@ import os
 import sys
 import subprocess
 from pathlib import Path
+from typing import List
 
 def print_header():
     """Print installation header"""
@@ -125,6 +126,117 @@ def install_scenario_creator():
         print(f"Error: {e}")
         return False
 
+def _escape_yaml_windows_path(p: Path) -> str:
+    """Return a YAML-safe double-quoted Windows path string.
+
+    YAML with double quotes treats backslash as escape, so we need to escape
+    them. Example: C:\\dir\\file
+    """
+    s = str(p)
+    return '"' + s.replace('\\', '\\\\') + '"'
+
+def _patch_programs_paths_in_yaml_lines(lines: List[str], gantry_path: Path, xarm_path: Path) -> List[str]:
+    """Update programs_path for gantry and xarm inside systems section.
+
+    This avoids adding external YAML dependencies by performing a
+    structure-aware line edit based on indentation.
+    """
+    new_lines = list(lines)
+
+    in_systems = False
+    current_section = None  # 'gantry' | 'xarm' | None
+
+    gantry_value = _escape_yaml_windows_path(gantry_path)
+    xarm_value = _escape_yaml_windows_path(xarm_path)
+
+    def replace_line(i: int, indent: int, value: str):
+        new_lines[i] = (" " * indent) + f"programs_path: {value}\n"
+
+    for i, line in enumerate(new_lines):
+        stripped = line.lstrip()
+        if stripped.startswith('#'):
+            continue
+        indent = len(line) - len(stripped)
+
+        # Enter systems top-level
+        if not in_systems and stripped.startswith('systems:') and indent == 0:
+            in_systems = True
+            current_section = None
+            continue
+
+        if in_systems:
+            # Leaving systems when a new top-level key appears
+            if stripped and indent == 0 and not stripped.startswith('systems:'):
+                in_systems = False
+                current_section = None
+                continue
+
+            # Detect subsections (e.g., '  gantry:' or '  xarm:')
+            if indent == 2 and stripped.startswith('gantry:'):
+                current_section = 'gantry'
+                continue
+            if indent == 2 and stripped.startswith('xarm:'):
+                current_section = 'xarm'
+                continue
+
+            # If we dedent back to subsection level or blank line, keep state until new section
+            if current_section and indent >= 4:
+                # Inside current section body
+                if stripped.startswith('programs_path:'):
+                    if current_section == 'gantry':
+                        replace_line(i, indent, gantry_value)
+                    elif current_section == 'xarm':
+                        replace_line(i, indent, xarm_value)
+                    continue
+
+    return new_lines
+
+def prepare_app_config() -> bool:
+    """Ensure app_config.yaml exists and has correct local programs paths.
+
+    - Copies app_config_template.yaml to app_config.yaml if missing.
+    - Updates systems.gantry.programs_path and systems.xarm.programs_path
+      to absolute paths within this checkout.
+    """
+    try:
+        repo_root = Path(__file__).parent
+        config_dir = repo_root / 'scenario_inspector' / 'config'
+        template_file = config_dir / 'app_config_template.yaml'
+        target_file = config_dir / 'app_config.yaml'
+
+        if not template_file.exists():
+            print(f"Warning: Template config not found: {template_file}")
+            return False
+
+        if not target_file.exists():
+            # Copy template -> target
+            content = template_file.read_text(encoding='utf-8')
+            target_file.write_text(content, encoding='utf-8')
+            print("Created app_config.yaml from template")
+        else:
+            print("app_config.yaml already exists; leaving existing values in place")
+            # Still attempt to patch paths to ensure local correctness
+
+        # Compute real paths
+        systems_dir = repo_root / 'scenario_inspector' / 'src' / 'systems'
+        gantry_programs = systems_dir / 'gantry_programs'
+        xarm_programs = systems_dir / 'xarm_programs'
+
+        if not gantry_programs.exists():
+            print(f"Warning: gantry_programs directory not found: {gantry_programs}")
+        if not xarm_programs.exists():
+            print(f"Warning: xarm_programs directory not found: {xarm_programs}")
+
+        # Patch YAML text lines
+        lines = target_file.read_text(encoding='utf-8').splitlines(keepends=True)
+        patched = _patch_programs_paths_in_yaml_lines(lines, gantry_programs, xarm_programs)
+        target_file.write_text(''.join(patched), encoding='utf-8')
+        print("Patched programs_path for gantry and xarm in app_config.yaml")
+        return True
+    except Exception as e:
+        print(f"Error preparing app_config.yaml: {e}")
+        return False
+
 def verify_installation():
     """Verify the installation was successful"""
     print("\nVerifying installation...")
@@ -203,6 +315,10 @@ def main():
     if not install_scenario_creator():
         success = False
     
+    # Prepare configuration (copy template and patch paths)
+    if not prepare_app_config():
+        success = False
+
     # Verify installation
     verify_installation()
     

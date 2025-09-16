@@ -302,6 +302,20 @@ class InspectionMainWindow(QMainWindow):
             # Update each changed value
             updated_lines = lines[:]
 
+            # API settings
+            updated_lines = update_yaml_line(updated_lines, 'api', 'url', self.settings_widgets['api_url'].text())
+            updated_lines = update_yaml_line(updated_lines, 'api', 'login_endpoint', self.settings_widgets['api_login_endpoint'].text())
+            updated_lines = update_yaml_line(updated_lines, 'api', 'inspection_endpoint', self.settings_widgets['api_inspection_endpoint'].text())
+            updated_lines = update_yaml_line(updated_lines, 'api', 'timeout', self.settings_widgets['api_timeout'].value())
+            updated_lines = update_yaml_line(updated_lines, 'api', 'use_https', self.settings_widgets['api_use_https'].isChecked())
+
+            # FTP settings
+            updated_lines = update_yaml_line(updated_lines, 'ftp', 'server', self.settings_widgets['ftp_server'].text())
+            updated_lines = update_yaml_line(updated_lines, 'ftp', 'username', self.settings_widgets['ftp_username'].text())
+            updated_lines = update_yaml_line(updated_lines, 'ftp', 'password', self.settings_widgets['ftp_password'].text())
+            updated_lines = update_yaml_line(updated_lines, 'ftp', 'base_path', self.settings_widgets['ftp_base_path'].text())
+            updated_lines = update_yaml_line(updated_lines, 'ftp', 'passive_mode', self.settings_widgets['ftp_passive_mode'].isChecked())
+            
             # Database settings
             updated_lines = update_yaml_line(updated_lines, 'database', 'host', self.settings_widgets['database_host'].text())
             updated_lines = update_yaml_line(updated_lines, 'database', 'port', self.settings_widgets['database_port'].value())
