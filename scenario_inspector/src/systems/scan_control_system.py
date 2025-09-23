@@ -228,41 +228,86 @@ class ScanControlSystem(BaseSystem):
             saving_file,
             output_path,
         )
+        # Parameters to control 3D stacking
+        profile_spacing_mm = float(parameters.get('profile_spacing_mm', 1.0))  # distance gantry moves between profiles (Y-axis)
+        intensity_min = int(parameters.get('intensity_min', 1))  # filter out zero/low intensity noise
+        drop_z_leq_zero = bool(parameters.get('drop_z_leq_zero', True))
+
         start_time = time.time()
         self.logger.debug("[DEBUG] Starting profile transfer...")
-        # Start profile transfer
         llt.transfer_profiles(self.hLLT, llt.TTransferProfileType.NORMAL_TRANSFER, 1)
+
         profile_buffer = (ct.c_ubyte * (self.resolution * 64))()
         lost_profiles = ct.c_int()
-        profiles = []
-        self.logger.debug("[DEBUG] Beginning profile capture loop for %s iterations", recording_time)
-        for i in range(recording_time):
-            self.logger.debug("[DEBUG] Capturing profile %s/%s", i+1, recording_time)
-            # Wait for profile (simulate 1Hz, real scanner may be faster)
-            time.sleep(1)
-            llt.get_actual_profile(self.hLLT, profile_buffer, len(profile_buffer), llt.TProfileConfig.PROFILE, ct.byref(lost_profiles))
-            # Convert profile to x, z, intensities
+
+        profiles = []  # store raw profiles for 2D CSV
+        pts_x, pts_y, pts_z, pts_i = [], [], [], []  # stacked 3D points
+
+        self.logger.debug("[DEBUG] Beginning profile capture loop for ~%ss (continuous)", recording_time)
+        end_time = start_time + float(recording_time)
+        profile_index = 0
+        while time.time() < end_time:
+            # Fetch latest profile
+            llt.get_actual_profile(
+                self.hLLT,
+                profile_buffer,
+                len(profile_buffer),
+                llt.TProfileConfig.PROFILE,
+                ct.byref(lost_profiles),
+            )
+            # Convert
             x = (ct.c_double * self.resolution)()
             z = (ct.c_double * self.resolution)()
             intensities = (ct.c_ushort * self.resolution)()
             snull = ct.POINTER(ct.c_ushort)()
             inull = ct.POINTER(ct.c_uint)()
-            llt.convert_profile_2_values(self.hLLT, profile_buffer, self.resolution, llt.TProfileConfig.PROFILE, self.scanner_type, 0, 1, snull, intensities, snull, x, z, inull, inull)
-            # Store profile data
-            profiles.append({
-                'x': [x[j] for j in range(self.resolution)],
-                'z': [z[j] for j in range(self.resolution)],
-                'intensities': [intensities[j] for j in range(self.resolution)]
-            })
-            self.logger.debug("[DEBUG] Profile %s/%s captured; lost_profiles=%s", i+1, recording_time, lost_profiles.value)
-            self.logger.debug("Profile %s/%s captured; lost_profiles=%s", i+1, recording_time, lost_profiles.value)
-        # Stop profile transfer
-        self.logger.debug("[DEBUG] Stopping profile transfer...")
+            llt.convert_profile_2_values(
+                self.hLLT,
+                profile_buffer,
+                self.resolution,
+                llt.TProfileConfig.PROFILE,
+                self.scanner_type,
+                0,
+                1,
+                snull,
+                intensities,
+                snull,
+                x,
+                z,
+                inull,
+                inull,
+            )
+            # Store raw profile (for 2D CSV)
+            x_row = [x[j] for j in range(self.resolution)]
+            z_row = [z[j] for j in range(self.resolution)]
+            i_row = [intensities[j] for j in range(self.resolution)]
+            profiles.append({'x': x_row, 'z': z_row, 'intensities': i_row})
+
+            # Stack into 3D points with Y from profile index
+            y_val = float(profile_index) * profile_spacing_mm
+            for j in range(self.resolution):
+                xi = float(x[j])
+                zi = float(z[j])
+                ii = int(intensities[j])
+                if drop_z_leq_zero and zi <= 0:
+                    continue
+                if ii < intensity_min:
+                    continue
+                pts_x.append(xi)
+                pts_y.append(y_val)
+                pts_z.append(zi)
+                pts_i.append(ii)
+
+            profile_index += 1
+            # Yield briefly; scanners stream faster than 1 Hz typically
+            time.sleep(0.01)
+
+        # Stop transfer
+        self.logger.debug("[DEBUG] Stopping profile transfer; captured %s profiles, lost_profiles flag=%s", profile_index, lost_profiles.value)
         llt.transfer_profiles(self.hLLT, llt.TTransferProfileType.NORMAL_TRANSFER, 0)
-        end_time = time.time()
-        actual_duration = end_time - start_time
-        self.logger.debug("[DEBUG] Data recording finished: profiles=%s, duration=%.2fs", len(profiles), actual_duration)
-        self.logger.debug("Data recording finished: profiles=%s, duration=%.2fs", len(profiles), actual_duration)
+        actual_duration = time.time() - start_time
+        self.logger.debug("[DEBUG] Data recording finished: profiles=%s, points=%s, duration=%.2fs", len(profiles), len(pts_x), actual_duration)
+
         result = {
             'success': True,
             'step_name': 'laser_scan',
@@ -270,6 +315,7 @@ class ScanControlSystem(BaseSystem):
             'duration': actual_duration,
             'parameters_used': parameters,
             'profiles_captured': len(profiles),
+            'points_captured': len(pts_x),
             'file_saved': False,
             'output_path': None
         }
@@ -279,9 +325,9 @@ class ScanControlSystem(BaseSystem):
             self.logger.debug("[DEBUG] Creating output directory: %s", output_path)
             os.makedirs(output_path, exist_ok=True)
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            filename = "scan_data_%s.csv" % timestamp
-            file_path = os.path.join(output_path, filename)
-            self.logger.debug("[DEBUG] Writing data to file: %s", file_path)
+            # 2D CSV (original format)
+            file_path = os.path.join(output_path, f"scan_data_{timestamp}.csv")
+            self.logger.debug("[DEBUG] Writing 2D CSV: %s", file_path)
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write("# x,z,intensity\n")
                 for profile in profiles:
@@ -296,6 +342,20 @@ class ScanControlSystem(BaseSystem):
             self.logger.debug("[DEBUG] Scan data saved successfully, file size: %.2f MB", size_mb)
             self.logger.info("Scan data saved to: %s", file_path)
             self.logger.debug("Saved file size: %.2f MB", size_mb)
+
+            # 3D CSV
+            file_path_3d = os.path.join(output_path, f"scan_points_{timestamp}.csv")
+            self.logger.debug("[DEBUG] Writing 3D CSV: %s (points=%s)", file_path_3d, len(pts_x))
+            with open(file_path_3d, 'w', encoding='utf-8') as f3:
+                f3.write("x,y,z,intensity\n")
+                for xi, yi, zi, ii in zip(pts_x, pts_y, pts_z, pts_i):
+                    f3.write(f"{xi},{yi},{zi},{ii}\n")
+            result['output_path_3d_csv'] = file_path_3d
+
+            # PLY (ASCII) with grayscale mapped from intensity
+            file_path_ply = os.path.join(output_path, f"scan_points_{timestamp}.ply")
+            self._write_ply_ascii(file_path_ply, pts_x, pts_y, pts_z, pts_i)
+            result['output_path_ply'] = file_path_ply
         except Exception as e:
             self.logger.debug("[DEBUG] Failed to save scan data: %s", e)
             self.logger.error("Failed to save scan data: %s", e)
@@ -305,6 +365,34 @@ class ScanControlSystem(BaseSystem):
         self.logger.debug("[DEBUG] Data recording scan completed successfully")
         self.logger.info("Data recording scan completed successfully")
         return result
+
+    def _write_ply_ascii(self, path: str, xs, ys, zs, intensities) -> None:
+        try:
+            n = len(xs)
+            if n == 0:
+                self.logger.warning("No points to write to PLY: %s", path)
+                return
+            imin = min(intensities) if intensities else 0
+            imax = max(intensities) if intensities else 1
+            span = float(imax - imin) if imax > imin else 1.0
+            with open(path, 'w', encoding='ascii') as f:
+                f.write("ply\n")
+                f.write("format ascii 1.0\n")
+                f.write(f"element vertex {n}\n")
+                f.write("property float x\n")
+                f.write("property float y\n")
+                f.write("property float z\n")
+                f.write("property uchar red\n")
+                f.write("property uchar green\n")
+                f.write("property uchar blue\n")
+                f.write("end_header\n")
+                for xi, yi, zi, ii in zip(xs, ys, zs, intensities):
+                    norm = (float(ii) - imin) / span
+                    c = int(max(0, min(255, round(norm * 255.0))))
+                    f.write(f"{xi:.6f} {yi:.6f} {zi:.6f} {c} {c} {c}\n")
+            self.logger.info("PLY written: %s (points=%s)", path, n)
+        except Exception as e:
+            self.logger.error("Failed to write PLY: %s", e)
 
     def _execute_calibration(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Execute calibration scan"""

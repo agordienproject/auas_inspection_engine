@@ -56,6 +56,11 @@ class AUASFTPServer:
             self.base_path.mkdir(parents=True, exist_ok=True)
             (self.base_path / "inspections").mkdir(exist_ok=True)
 
+            # Create/ensure date tracking file at the FTP root
+            track_file = self.base_path / "last_processed_date.txt"
+            if not track_file.exists():
+                track_file.write_text("\n", encoding="utf-8")
+
             # Create a test file
             test_file = self.base_path / "server_info.txt"
             with open(test_file, 'w', encoding='utf-8') as f:
