@@ -126,6 +126,55 @@ def install_scenario_creator():
         print(f"Error: {e}")
         return False
 
+def install_scan_tools():
+    """Install the scan_tools utilities (viewer + processor).
+
+    - Installs Python dependencies from scan_tools/requirements.txt
+    - Creates scan_tools/.env from scan_tools/.env.template (copy as-is)
+    """
+    print("\nInstalling Scan Tools (viewer & processor)...")
+    tools_dir = Path(__file__).parent / "scan_tools"
+
+    if not tools_dir.exists():
+        print("Warning: scan_tools directory not found, skipping...")
+        return True
+
+    ok = True
+    try:
+        # 1) Install Python requirements
+        req = tools_dir / "requirements.txt"
+        if req.exists():
+            print(f"Installing Python packages from {req} ...")
+            result = subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(req)],
+                                    capture_output=True, text=True)
+            if result.returncode == 0:
+                print("Scan Tools dependencies installed")
+            else:
+                print("Error installing Scan Tools dependencies:")
+                print(result.stderr)
+                ok = False
+        else:
+            print("No requirements.txt found for scan_tools")
+
+        # 2) Create .env from template (copy values as-is)
+        env_template = tools_dir / ".env.template"
+        env_target = tools_dir / ".env"
+        if env_template.exists():
+            if env_target.exists():
+                print("scan_tools/.env already exists; leaving existing values unchanged")
+            else:
+                env_content = env_template.read_text(encoding="utf-8")
+                env_target.write_text(env_content, encoding="utf-8")
+                print("Created scan_tools/.env from .env.template (values copied unchanged)")
+        else:
+            print("Warning: scan_tools/.env.template not found; skipping .env creation")
+
+    except Exception as e:
+        print(f"Error installing Scan Tools: {e}")
+        ok = False
+
+    return ok
+
 def _escape_yaml_windows_path(p: Path) -> str:
     """Return a YAML-safe double-quoted Windows path string.
 
@@ -288,6 +337,12 @@ def print_completion_info():
     print("  1. Navigate to scenario_creator/")
     print("  2. Run: python scenario_creator.py")
     print("")
+    print("Scan Tools (viewer & processor):")
+    print("  - Location: scan_tools/")
+    print("  - Start Viewer: start-viewer.bat or python scan_viewer.py")
+    print("  - Start Processor: start-processor.bat or python enhanced_scan_processor.py")
+    print("  - Config: scan_tools/.env (created from .env.template)")
+    print("")
     print("Configuration files:")
     print("  - Main config: scenario_inspector/config/app_config.yaml")
     print("  - Environment: .env")
@@ -315,6 +370,10 @@ def main():
     if not install_scenario_creator():
         success = False
     
+    # Install Scan Tools (viewer & processor)
+    if not install_scan_tools():
+        success = False
+
     # Prepare configuration (copy template and patch paths)
     if not prepare_app_config():
         success = False

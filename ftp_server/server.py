@@ -55,6 +55,9 @@ class AUASFTPServer:
         try:
             self.base_path.mkdir(parents=True, exist_ok=True)
             (self.base_path / "inspections").mkdir(exist_ok=True)
+            
+            # Create piece_reference folder for storing cleaned PLY files by piece reference
+            (self.base_path / "piece_reference").mkdir(exist_ok=True)
 
             # Create/ensure date tracking file at the FTP root
             track_file = self.base_path / "last_processed_date.txt"

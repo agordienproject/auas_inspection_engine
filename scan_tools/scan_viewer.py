@@ -2,11 +2,19 @@
 from pathlib import Path
 import sys
 import numpy as np
+import os
+import ftplib
+import io
+from datetime import datetime
+
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QTextEdit, QGroupBox, QFormLayout,
-    QSlider, QCheckBox
+    QSlider, QCheckBox, QLineEdit
 )
 from PyQt5.QtCore import Qt
 
@@ -58,12 +66,16 @@ class ScanViewer(QWidget):
         btn_interactive = QPushButton("Interactive View")
         btn_interactive.setToolTip("Open Open3D interactive window (orbit/pan/zoom). Press H for help")
         btn_interactive.clicked.connect(self.open_interactive_view)
+        btn_save_cleaned = QPushButton("Save Cleaned PLY")
+        btn_save_cleaned.setToolTip("Save cleaned point cloud to FTP server piece_reference folder")
+        btn_save_cleaned.clicked.connect(self.save_cleaned_ply)
         controls.addWidget(self.lbl, stretch=1)
         controls.addWidget(btn_load)
         controls.addWidget(btn_load_ply)
         controls.addWidget(btn_reset)
         controls.addWidget(btn_clean)
         controls.addWidget(btn_interactive)
+        controls.addWidget(btn_save_cleaned)
         root.addLayout(controls)
 
         # Info panels
@@ -113,6 +125,37 @@ class ScanViewer(QWidget):
         ro_box.setLayout(ro_form)
         root.addWidget(ro_box)
 
+        # Clean options
+        clean_box = QGroupBox("Clean Options")
+        clean_form = QFormLayout()
+        self.chk_remove_plane = QCheckBox("Detect & Remove Ground Plane")
+        self.chk_remove_plane.setChecked(True)
+        self.chk_keep_above = QCheckBox("Keep Only Above Plane")
+        self.chk_keep_above.setChecked(True)
+        self.chk_largest_cluster = QCheckBox("Keep Largest Cluster")
+        self.chk_largest_cluster.setChecked(True)
+        self.chk_poisson = QCheckBox("Reconstruct Surface (Poisson)")
+        self.chk_poisson.setToolTip("Estimate normals, run Poisson reconstruction, and show mesh")
+        self.chk_poisson.setChecked(False)
+        self.txt_voxel = QLineEdit("0.4")
+        self.txt_plane_dist = QLineEdit("1.8")
+        self.txt_outlier_std = QLineEdit("2.8")
+        self.txt_dbscan_eps = QLineEdit("2.8")
+        self.txt_dbscan_min = QLineEdit("6")
+        self.txt_poisson_depth = QLineEdit("9")
+        clean_form.addRow(self.chk_remove_plane)
+        clean_form.addRow(self.chk_keep_above)
+        clean_form.addRow(self.chk_largest_cluster)
+        clean_form.addRow(self.chk_poisson)
+        clean_form.addRow("Voxel (mm)", self.txt_voxel)
+        clean_form.addRow("Plane dist (mm)", self.txt_plane_dist)
+        clean_form.addRow("Outlier std_ratio", self.txt_outlier_std)
+        clean_form.addRow("DBSCAN eps (mm)", self.txt_dbscan_eps)
+        clean_form.addRow("DBSCAN min_points", self.txt_dbscan_min)
+        clean_form.addRow("Poisson depth", self.txt_poisson_depth)
+        clean_box.setLayout(clean_form)
+        root.addWidget(clean_box)
+
         # The Open3D window is created on-demand.
 
     def load_csv(self):
@@ -155,29 +198,153 @@ class ScanViewer(QWidget):
             self._log(f"Reset view failed: {e}")
 
     def clean_preview(self):
-        if not self.current_path:
+        if not self.current_path and self._last_pcd is None and self._last_mesh is None:
             self._log("No file loaded")
             return
-        # Run a light clean/align and render
         try:
-            pts, cols, inten = load_scan_csv_with_intensity(self.current_path)
-            pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pts.astype(np.float64)))
-            pcd.colors = o3d.utility.Vector3dVector(cols.astype(np.float64))
-            pcd = pcd.voxel_down_sample(voxel_size=0.5)
-            pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
-            pcd.estimate_normals()
-            self._ensure_vis()
-            self.o3d_vis.clear_geometries()
-            self._add_axis_for(pcd)
-            self.o3d_vis.add_geometry(pcd)
-            ro = self.o3d_vis.get_render_option()
-            ro.point_size = float(self.sld_pointsize.value())
-            ro.background_color = np.array([0.98, 0.98, 0.98])
-            self._fit_camera(pcd)
-            self.o3d_vis.poll_events()
-            self.o3d_vis.update_renderer()
-            self._update_stats(np.asarray(pcd.points), inten)
-            self._log("Clean+align preview refreshed")
+            # Build a point cloud from current data (CSV/PLY PCD/Mesh)
+            base_pcd = None
+            base_inten = None
+            if self._last_pcd is not None:
+                base_pcd = self._last_pcd
+            elif self._last_mesh is not None:
+                try:
+                    verts = np.asarray(self._last_mesh.vertices)
+                    base_pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(verts.astype(np.float64)))
+                except Exception:
+                    pass
+            elif self.current_path:
+                suffix = self.current_path.suffix.lower()
+                if suffix == ".csv":
+                    pts, cols, inten = load_scan_csv_with_intensity(self.current_path)
+                    base_inten = inten
+                    base_pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pts.astype(np.float64)))
+                    base_pcd.colors = o3d.utility.Vector3dVector(cols.astype(np.float64))
+                elif suffix == ".ply":
+                    try:
+                        pcd = o3d.io.read_point_cloud(str(self.current_path))
+                        if pcd is not None and len(pcd.points) > 0:
+                            base_pcd = pcd
+                        else:
+                            mesh = o3d.io.read_triangle_mesh(str(self.current_path))
+                            if mesh is not None and len(mesh.vertices) > 0:
+                                verts = np.asarray(mesh.vertices)
+                                base_pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(verts.astype(np.float64)))
+                    except Exception:
+                        pass
+
+            if base_pcd is None:
+                self._log("Unable to prepare point cloud for cleaning.")
+                return
+
+            # Parameters
+            voxel = self._get_float(self.txt_voxel, 0.5)
+            plane_dist = self._get_float(self.txt_plane_dist, 1.0)
+            out_std = self._get_float(self.txt_outlier_std, 2.0)
+            db_eps = self._get_float(self.txt_dbscan_eps, 2.0)
+            try:
+                db_min = int(float(self.txt_dbscan_min.text().strip()))
+            except Exception:
+                db_min = 10
+            depth = int(self._get_float(self.txt_poisson_depth, 9))
+
+            pcd = base_pcd.voxel_down_sample(max(1e-6, float(voxel))) if voxel > 1e-6 else base_pcd
+            if len(pcd.points) == 0:
+                self._log("No points after voxel downsample.")
+                return
+            # Remove sparse outliers first
+            try:
+                pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=float(out_std))
+            except Exception:
+                pass
+
+            # Estimate normals for later steps
+            try:
+                pcd.estimate_normals()
+            except Exception:
+                pass
+
+            # Plane segmentation and above-plane filtering
+            if self.chk_remove_plane.isChecked() or self.chk_keep_above.isChecked():
+                try:
+                    model, inliers = pcd.segment_plane(distance_threshold=float(plane_dist), ransac_n=3, num_iterations=500)
+                    a, b, c, d = model
+                    n = np.array([a, b, c], dtype=np.float64)
+                    nn = np.linalg.norm(n)
+                    if nn > 0:
+                        n = n / nn
+                        d = d / nn
+                    # Orient normal upwards (Z positive)
+                    if n[2] < 0:
+                        n = -n
+                        d = -d
+                    pts_np = np.asarray(pcd.points)
+                    if self.chk_remove_plane.isChecked():
+                        mask = np.ones((pts_np.shape[0],), dtype=bool)
+                        mask[np.asarray(inliers, dtype=int)] = False
+                        pts_np = pts_np[mask]
+                        if pcd.has_colors():
+                            cols_np = np.asarray(pcd.colors)[mask]
+                        else:
+                            cols_np = None
+                        pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pts_np))
+                        if cols_np is not None:
+                            pcd.colors = o3d.utility.Vector3dVector(cols_np)
+                    # Keep only above plane if requested
+                    if self.chk_keep_above.isChecked() and pts_np.shape[0] > 0:
+                        signed = np.dot(pts_np, n) + d
+                        keep = signed > 0.0
+                        pts_np = pts_np[keep]
+                        if pcd.has_colors():
+                            cols_np = np.asarray(pcd.colors)
+                            cols_np = cols_np[keep]
+                        else:
+                            cols_np = None
+                        pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pts_np))
+                        if cols_np is not None:
+                            pcd.colors = o3d.utility.Vector3dVector(cols_np)
+                except Exception as e:
+                    self._log(f"Plane segmentation skipped: {e}")
+
+            # Largest cluster selection
+            if self.chk_largest_cluster.isChecked():
+                try:
+                    labels = np.array(pcd.cluster_dbscan(eps=float(db_eps), min_points=int(db_min), print_progress=False))
+                    if labels.size and labels.max() >= 0:
+                        counts = np.bincount(labels[labels >= 0])
+                        largest_label = counts.argmax()
+                        mask = labels == largest_label
+                        pts_np = np.asarray(pcd.points)[mask]
+                        if pcd.has_colors():
+                            cols_np = np.asarray(pcd.colors)[mask]
+                        else:
+                            cols_np = None
+                        pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pts_np))
+                        if cols_np is not None:
+                            pcd.colors = o3d.utility.Vector3dVector(cols_np)
+                except Exception as e:
+                    self._log(f"Clustering skipped: {e}")
+
+            # Render mesh if Poisson requested
+            if self.chk_poisson.isChecked():
+                try:
+                    pcd.estimate_normals()
+                    mesh, dens = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=int(depth))
+                    bbox = pcd.get_axis_aligned_bounding_box()
+                    mesh = mesh.crop(bbox)
+                    if not mesh.has_vertex_colors():
+                        mesh.paint_uniform_color([0.8, 0.8, 0.85])
+                    mesh.compute_vertex_normals()
+                    self._render_mesh(mesh)
+                    self._log("Clean preview: reconstructed surface (Poisson)")
+                    return
+                except Exception as e:
+                    self._log(f"Poisson reconstruction failed: {e}")
+
+            # Otherwise render cleaned point cloud
+            self._render_pcd(pcd)
+            self._update_stats(np.asarray(pcd.points), base_inten)
+            self._log("Clean preview refreshed")
         except Exception as e:
             self._log(f"Clean preview failed: {e}")
 
@@ -291,6 +458,12 @@ class ScanViewer(QWidget):
             ro.background_color = np.array([0.06, 0.06, 0.08]) if self.chk_darkbg.isChecked() else np.array([0.98, 0.98, 0.98])
         self.o3d_vis.poll_events()
         self.o3d_vis.update_renderer()
+
+    def _get_float(self, qle: QLineEdit, default: float) -> float:
+        try:
+            return float(qle.text().strip())
+        except Exception:
+            return float(default)
 
     def _update_wireframe(self):
         if not self.o3d_vis:
@@ -408,6 +581,153 @@ class ScanViewer(QWidget):
             self.stat_bounds.setText(f"min {mins.round(3)} / max {maxs.round(3)}")
         else:
             self.stat_bounds.setText("-")
+
+    def save_cleaned_ply(self):
+        """Save the cleaned point cloud to real FTP server piece_reference folder"""
+        if self._last_pcd is None:
+            self._log("❌ No cleaned point cloud available. Run 'Clean & Align Preview' first.")
+            return
+            
+        try:
+            # Find reference.txt in scenario_inspector output folders
+            piece_reference = self._find_latest_piece_reference()
+            if not piece_reference:
+                self._log("❌ No reference.txt found in recent inspections. Run an inspection with scan data first.")
+                return
+            
+            # Get FTP configuration from environment
+            ftp_host = os.getenv('FTP_HOST', 'localhost')
+            ftp_port = int(os.getenv('FTP_PORT', 21))
+            ftp_username = os.getenv('FTP_USERNAME', 'inspection_engine')
+            ftp_password = os.getenv('FTP_PASSWORD', 'admin')
+            ftp_base_path = os.getenv('FTP_BASE_PATH', '/')
+            
+            # Generate timestamp and filenames
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            cleaned_filename = f"cleaned_scan_{timestamp}.ply"
+            params_filename = f"cleaning_params_{timestamp}.txt"
+            
+            # Connect to FTP server
+            self._log(f"🔗 Connecting to FTP server {ftp_host}:{ftp_port}...")
+            ftp = ftplib.FTP()
+            ftp.connect(ftp_host, ftp_port)
+            ftp.login(ftp_username, ftp_password)
+            
+            # Navigate to piece_reference folder
+            ftp_piece_path = f"{ftp_base_path.rstrip('/')}/piece_reference/{piece_reference}"
+            self._log(f"📁 Creating FTP directory: {ftp_piece_path}")
+            
+            # Create directory structure (handle existing directories)
+            try:
+                ftp.mkd("piece_reference")
+            except ftplib.error_perm:
+                pass  # Directory already exists
+            
+            try:
+                ftp.mkd(f"piece_reference/{piece_reference}")
+            except ftplib.error_perm:
+                pass  # Directory already exists
+            
+            # Change to the piece directory
+            ftp.cwd(f"piece_reference/{piece_reference}")
+            
+            # Save PLY file to temporary location first
+            temp_ply_path = Path(f"temp_{cleaned_filename}")
+            success = o3d.io.write_point_cloud(str(temp_ply_path), self._last_pcd)
+            
+            if not success:
+                self._log("❌ Failed to save temporary PLY file")
+                ftp.quit()
+                return
+            
+            # Upload PLY file to FTP
+            self._log(f"⬆️ Uploading {cleaned_filename}...")
+            with open(temp_ply_path, 'rb') as f:
+                ftp.storbinary(f'STOR {cleaned_filename}', f)
+            
+            # Create and upload parameters file
+            params_content = f"""Cleaning Parameters Used:
+Voxel Size (mm): {self.txt_voxel.text()}
+Plane Distance (mm): {self.txt_plane_dist.text()}
+Outlier Std Ratio: {self.txt_outlier_std.text()}
+DBSCAN Eps (mm): {self.txt_dbscan_eps.text()}
+DBSCAN Min Points: {self.txt_dbscan_min.text()}
+Poisson Depth: {self.txt_poisson_depth.text()}
+
+Options:
+Remove Ground Plane: {self.chk_remove_plane.isChecked()}
+Keep Above Plane: {self.chk_keep_above.isChecked()}
+Keep Largest Cluster: {self.chk_largest_cluster.isChecked()}
+Poisson Reconstruction: {self.chk_poisson.isChecked()}
+
+Original PLY: {self.current_path if self.current_path else 'N/A'}
+Cleaned PLY: {cleaned_filename}
+Timestamp: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+FTP Path: {ftp_piece_path}/{cleaned_filename}
+"""
+            
+            # Upload parameters file
+            self._log(f"⬆️ Uploading {params_filename}...")
+            params_io = io.BytesIO(params_content.encode('utf-8'))
+            ftp.storbinary(f'STOR {params_filename}', params_io)
+            
+            # Close FTP connection
+            ftp.quit()
+            
+            # Clean up temporary file
+            temp_ply_path.unlink()
+            
+            self._log(f"✅ Cleaned PLY uploaded to FTP: {ftp_piece_path}/{cleaned_filename}")
+            self._log(f"📁 Piece reference: {piece_reference}")
+            self._log(f"📝 Parameters uploaded: {ftp_piece_path}/{params_filename}")
+                
+        except ftplib.all_errors as e:
+            self._log(f"❌ FTP Error: {e}")
+        except Exception as e:
+            self._log(f"❌ Error saving cleaned PLY: {e}")
+
+    def _find_latest_piece_reference(self) -> str | None:
+        """Find the most recent piece reference from scenario_inspector output folders"""
+        try:
+            # Path to scenario_inspector output directory
+            output_root = Path("../scenario_inspector/output")
+            if not output_root.exists():
+                return None
+            
+            # Look for reference.txt files in all inspection folders, sorted by date (newest first)
+            reference_files = []
+            
+            for date_folder in output_root.iterdir():
+                if date_folder.is_dir() and date_folder.name.count('-') == 2:  # Date format YYYY-MM-DD
+                    for inspection_folder in date_folder.iterdir():
+                        if inspection_folder.is_dir():
+                            ref_file = inspection_folder / "reference.txt"
+                            if ref_file.exists():
+                                try:
+                                    # Get modification time and content
+                                    mtime = ref_file.stat().st_mtime
+                                    content = ref_file.read_text().strip()
+                                    if content:
+                                        reference_files.append((mtime, content, ref_file))
+                                except Exception:
+                                    continue
+            
+            if not reference_files:
+                return None
+            
+            # Sort by modification time (newest first) and return the most recent reference
+            reference_files.sort(key=lambda x: x[0], reverse=True)
+            latest_ref = reference_files[0][1]
+            latest_file = reference_files[0][2]
+            
+            self._log(f"📋 Found latest piece reference: {latest_ref}")
+            self._log(f"📂 From: {latest_file}")
+            
+            return latest_ref
+            
+        except Exception as e:
+            self._log(f"❌ Error finding piece reference: {e}")
+            return None
 
     def _log(self, msg: str):
         self.log.append(msg)

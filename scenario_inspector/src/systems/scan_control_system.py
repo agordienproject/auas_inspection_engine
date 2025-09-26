@@ -219,8 +219,12 @@ class ScanControlSystem(BaseSystem):
 
     def _execute_data_recording(self, parameters: Dict[str, Any], recording_time: int, saving_file: bool, output_path: str) -> Dict[str, Any]:
         self.logger.debug("[DEBUG] ScanControlSystem._execute_data_recording() called")
-        self.logger.debug("[DEBUG] Recording parameters: recording_time=%s, saving_file=%s, output_path=%s",
-              recording_time, saving_file, output_path)
+        self.logger.debug(
+            "[DEBUG] Recording parameters: recording_time=%s, saving_file=%s, output_path=%s",
+            recording_time,
+            saving_file,
+            output_path,
+        )
         self.logger.info("Starting data recording scan (real scanner)")
         self.logger.debug(
             "_execute_data_recording: recording_time=%s, saving_file=%s, output_path=%s",
@@ -228,9 +232,13 @@ class ScanControlSystem(BaseSystem):
             saving_file,
             output_path,
         )
+
         # Parameters to control 3D stacking
-        profile_spacing_mm = float(parameters.get('profile_spacing_mm', 1.0))  # distance gantry moves between profiles (Y-axis)
-        intensity_min = int(parameters.get('intensity_min', 1))  # filter out zero/low intensity noise
+        profile_spacing_mm = float(parameters.get('profile_spacing_mm', 1.0))  # distance per profile when using index mode
+        gantry_speed_mm_s = float(parameters.get('gantry_speed_mm_s', 0.0))    # distance per second when using time mode
+        y_origin_mm = float(parameters.get('y_origin_mm', 0.0))                # optional offset
+        y_mode = str(parameters.get('y_mode', 'auto')).lower()                 # 'auto' | 'time' | 'index'
+        intensity_min = int(parameters.get('intensity_min', 1))                # filter low intensity
         drop_z_leq_zero = bool(parameters.get('drop_z_leq_zero', True))
 
         start_time = time.time()
@@ -240,14 +248,15 @@ class ScanControlSystem(BaseSystem):
         profile_buffer = (ct.c_ubyte * (self.resolution * 64))()
         lost_profiles = ct.c_int()
 
-        profiles = []  # store raw profiles for 2D CSV
-        pts_x, pts_y, pts_z, pts_i = [], [], [], []  # stacked 3D points
+        profiles = []  # raw 2D for legacy CSV
+        pts_x, pts_y, pts_z, pts_i = [], [], [], []  # stacked 3D
 
         self.logger.debug("[DEBUG] Beginning profile capture loop for ~%ss (continuous)", recording_time)
         end_time = start_time + float(recording_time)
         profile_index = 0
+        last_log_time = start_time
         while time.time() < end_time:
-            # Fetch latest profile
+            # Fetch latest profile from device buffer
             llt.get_actual_profile(
                 self.hLLT,
                 profile_buffer,
@@ -255,7 +264,8 @@ class ScanControlSystem(BaseSystem):
                 llt.TProfileConfig.PROFILE,
                 ct.byref(lost_profiles),
             )
-            # Convert
+
+            # Convert to x, z, intensities
             x = (ct.c_double * self.resolution)()
             z = (ct.c_double * self.resolution)()
             intensities = (ct.c_ushort * self.resolution)()
@@ -277,14 +287,23 @@ class ScanControlSystem(BaseSystem):
                 inull,
                 inull,
             )
-            # Store raw profile (for 2D CSV)
+
+            # Store raw profile for 2D CSV
             x_row = [x[j] for j in range(self.resolution)]
             z_row = [z[j] for j in range(self.resolution)]
-            i_row = [intensities[j] for j in range(self.resolution)]
+            i_row = [int(intensities[j]) for j in range(self.resolution)]
             profiles.append({'x': x_row, 'z': z_row, 'intensities': i_row})
 
-            # Stack into 3D points with Y from profile index
-            y_val = float(profile_index) * profile_spacing_mm
+            # Map to Y
+            now = time.time()
+            elapsed = now - start_time
+            use_time_mode = (y_mode == 'time') or (y_mode == 'auto' and gantry_speed_mm_s > 0)
+            if use_time_mode:
+                y_val = y_origin_mm + float(elapsed) * gantry_speed_mm_s
+            else:
+                y_val = y_origin_mm + float(profile_index) * profile_spacing_mm
+
+            # Accumulate 3D points with filters
             for j in range(self.resolution):
                 xi = float(x[j])
                 zi = float(z[j])
@@ -299,14 +318,39 @@ class ScanControlSystem(BaseSystem):
                 pts_i.append(ii)
 
             profile_index += 1
-            # Yield briefly; scanners stream faster than 1 Hz typically
-            time.sleep(0.01)
+
+            # Telemetry (approx capture rate)
+            if now - last_log_time >= 1.0:
+                rate = profile_index / max(1e-6, (now - start_time))
+                self.logger.debug(
+                    "[DEBUG] Capture rate ~%.1f Hz, profiles=%s, points=%s",
+                    rate,
+                    profile_index,
+                    len(pts_x),
+                )
+                last_log_time = now
+
+            # Very short sleep to avoid tight busy-loop
+            time.sleep(0.001)
 
         # Stop transfer
-        self.logger.debug("[DEBUG] Stopping profile transfer; captured %s profiles, lost_profiles flag=%s", profile_index, lost_profiles.value)
+        self.logger.debug(
+            "[DEBUG] Stopping profile transfer; captured %s profiles, lost_profiles flag=%s",
+            profile_index,
+            lost_profiles.value,
+        )
         llt.transfer_profiles(self.hLLT, llt.TTransferProfileType.NORMAL_TRANSFER, 0)
         actual_duration = time.time() - start_time
-        self.logger.debug("[DEBUG] Data recording finished: profiles=%s, points=%s, duration=%.2fs", len(profiles), len(pts_x), actual_duration)
+        est_rate_hz = profile_index / max(1e-6, actual_duration)
+        y_mode_used = 'time' if use_time_mode else 'index'
+        self.logger.debug(
+            "[DEBUG] Data recording finished: profiles=%s, points=%s, duration=%.2fs, est_rate=%.1f Hz, y_mode=%s",
+            len(profiles),
+            len(pts_x),
+            actual_duration,
+            est_rate_hz,
+            y_mode_used,
+        )
 
         result = {
             'success': True,
@@ -316,16 +360,20 @@ class ScanControlSystem(BaseSystem):
             'parameters_used': parameters,
             'profiles_captured': len(profiles),
             'points_captured': len(pts_x),
+            'estimated_profile_rate_hz': est_rate_hz,
+            'y_mode_used': y_mode_used,
             'file_saved': False,
-            'output_path': None
+            'output_path': None,
         }
 
+        # Save outputs
         self.logger.debug("[DEBUG] Saving scan data to file...")
         try:
             self.logger.debug("[DEBUG] Creating output directory: %s", output_path)
             os.makedirs(output_path, exist_ok=True)
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            # 2D CSV (original format)
+
+            # 2D CSV (legacy)
             file_path = os.path.join(output_path, f"scan_data_{timestamp}.csv")
             self.logger.debug("[DEBUG] Writing 2D CSV: %s", file_path)
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -336,7 +384,7 @@ class ScanControlSystem(BaseSystem):
             result['file_saved'] = True
             result['output_path'] = file_path
             try:
-                size_mb = os.path.getsize(file_path) / (1024*1024)
+                size_mb = os.path.getsize(file_path) / (1024 * 1024)
             except Exception:
                 size_mb = 0
             self.logger.debug("[DEBUG] Scan data saved successfully, file size: %.2f MB", size_mb)
@@ -362,6 +410,7 @@ class ScanControlSystem(BaseSystem):
             result['save_error'] = str(e)
         else:
             self.logger.debug("[DEBUG] Saving file not requested, skipping...")
+
         self.logger.debug("[DEBUG] Data recording scan completed successfully")
         self.logger.info("Data recording scan completed successfully")
         return result
