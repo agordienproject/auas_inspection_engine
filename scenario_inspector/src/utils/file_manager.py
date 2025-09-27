@@ -85,6 +85,15 @@ class FileManager:
         """Create inspection report file"""
         report_path = os.path.join(inspection_folder, "inspection_report.txt")
         self.logger.info("Creating inspection report at: %s", report_path)
+        
+        # Check if inspection has scan data (PLY files)
+        has_scan_data = False
+        if os.path.exists(inspection_folder):
+            scan_data_folder = os.path.join(inspection_folder, "scan_data")
+            if os.path.exists(scan_data_folder):
+                ply_files = [f for f in os.listdir(scan_data_folder) if f.endswith('.ply')]
+                has_scan_data = len(ply_files) > 0
+        
         try:
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write("AUAS INSPECTION REPORT\n")
@@ -95,7 +104,16 @@ class FileManager:
                 f.write(f"Piece: {inspection_data.get('piece_name', 'Unknown')}\n")
                 f.write(f"Reference: {inspection_data.get('ref_piece', 'Unknown')}\n")
                 f.write(f"Inspection Date: {inspection_data.get('inspection_date', 'Unknown')}\n")
-                f.write(f"Inspector: {inspection_data.get('inspector', 'Unknown')}\n\n")
+                f.write(f"Inspector: {inspection_data.get('inspector', 'Unknown')}\n")
+                f.write(f"Has Scan Data: {'Yes' if has_scan_data else 'No'}\n\n")
+                
+            # If inspection has scan data, create reference.txt in inspection folder
+            if has_scan_data:
+                ref_piece = inspection_data.get('ref_piece', '')
+                if ref_piece and ref_piece != 'Unknown':
+                    self._create_reference_file(ref_piece, inspection_folder)
+                else:
+                    self.logger.warning("No valid piece reference found for scan data")
 
                 # Step results
                 f.write("STEP RESULTS:\n")
@@ -127,6 +145,22 @@ class FileManager:
         except Exception as e:
             self.logger.error("Failed to create inspection report: %s", e)
             return ""
+
+    def _create_reference_file(self, ref_piece: str, inspection_folder: str):
+        """Create reference.txt file in the inspection output folder with the piece reference"""
+        try:
+            # Create reference.txt in the inspection folder (local to scenario_inspector output)
+            reference_file_path = os.path.join(inspection_folder, "reference.txt")
+            
+            # Write the piece reference to reference.txt
+            with open(reference_file_path, 'w', encoding='utf-8') as f:
+                f.write(ref_piece)
+            
+            self.logger.info(f"Created reference.txt in inspection folder with piece reference: {ref_piece}")
+            self.logger.info(f"Reference file location: {reference_file_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create reference.txt: {e}")
 
     def _clean_filename(self, filename: str) -> str:
         """Clean filename by removing invalid characters"""

@@ -25,6 +25,6 @@ scenario_inspector/config/app_config.yaml
 
 # Remove spec files
 *.spec
-auas_scenario_inspector.egg-info/
+scenario_inspector/src/auas_scenario_inspector.egg-info/*
 
-.env
+scan_tools/Open3D-Tutorial/*

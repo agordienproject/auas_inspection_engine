@@ -14,7 +14,8 @@ program:
           name: "lazer"
           system: "scanControl"
           parameters:
-            param1: 1300
-            param2: "ex"
+            profile_spacing_mm: 0.1
+            intensity_min: 30
+            drop_z_leq_zero: true
           action: "recording_data"
-          recording_time: 20
+          recording_time: 10

@@ -7,6 +7,7 @@ import os
 import sys
 import subprocess
 from pathlib import Path
+from typing import List
 
 def print_header():
     """Print installation header"""
@@ -125,6 +126,166 @@ def install_scenario_creator():
         print(f"Error: {e}")
         return False
 
+def install_scan_tools():
+    """Install the scan_tools utilities (viewer + processor).
+
+    - Installs Python dependencies from scan_tools/requirements.txt
+    - Creates scan_tools/.env from scan_tools/.env.template (copy as-is)
+    """
+    print("\nInstalling Scan Tools (viewer & processor)...")
+    tools_dir = Path(__file__).parent / "scan_tools"
+
+    if not tools_dir.exists():
+        print("Warning: scan_tools directory not found, skipping...")
+        return True
+
+    ok = True
+    try:
+        # 1) Install Python requirements
+        req = tools_dir / "requirements.txt"
+        if req.exists():
+            print(f"Installing Python packages from {req} ...")
+            result = subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(req)],
+                                    capture_output=True, text=True)
+            if result.returncode == 0:
+                print("Scan Tools dependencies installed")
+            else:
+                print("Error installing Scan Tools dependencies:")
+                print(result.stderr)
+                ok = False
+        else:
+            print("No requirements.txt found for scan_tools")
+
+        # 2) Create .env from template (copy values as-is)
+        env_template = tools_dir / ".env.template"
+        env_target = tools_dir / ".env"
+        if env_template.exists():
+            if env_target.exists():
+                print("scan_tools/.env already exists; leaving existing values unchanged")
+            else:
+                env_content = env_template.read_text(encoding="utf-8")
+                env_target.write_text(env_content, encoding="utf-8")
+                print("Created scan_tools/.env from .env.template (values copied unchanged)")
+        else:
+            print("Warning: scan_tools/.env.template not found; skipping .env creation")
+
+    except Exception as e:
+        print(f"Error installing Scan Tools: {e}")
+        ok = False
+
+    return ok
+
+def _escape_yaml_windows_path(p: Path) -> str:
+    """Return a YAML-safe double-quoted Windows path string.
+
+    YAML with double quotes treats backslash as escape, so we need to escape
+    them. Example: C:\\dir\\file
+    """
+    s = str(p)
+    return '"' + s.replace('\\', '\\\\') + '"'
+
+def _patch_programs_paths_in_yaml_lines(lines: List[str], gantry_path: Path, xarm_path: Path) -> List[str]:
+    """Update programs_path for gantry and xarm inside systems section.
+
+    This avoids adding external YAML dependencies by performing a
+    structure-aware line edit based on indentation.
+    """
+    new_lines = list(lines)
+
+    in_systems = False
+    current_section = None  # 'gantry' | 'xarm' | None
+
+    gantry_value = _escape_yaml_windows_path(gantry_path)
+    xarm_value = _escape_yaml_windows_path(xarm_path)
+
+    def replace_line(i: int, indent: int, value: str):
+        new_lines[i] = (" " * indent) + f"programs_path: {value}\n"
+
+    for i, line in enumerate(new_lines):
+        stripped = line.lstrip()
+        if stripped.startswith('#'):
+            continue
+        indent = len(line) - len(stripped)
+
+        # Enter systems top-level
+        if not in_systems and stripped.startswith('systems:') and indent == 0:
+            in_systems = True
+            current_section = None
+            continue
+
+        if in_systems:
+            # Leaving systems when a new top-level key appears
+            if stripped and indent == 0 and not stripped.startswith('systems:'):
+                in_systems = False
+                current_section = None
+                continue
+
+            # Detect subsections (e.g., '  gantry:' or '  xarm:')
+            if indent == 2 and stripped.startswith('gantry:'):
+                current_section = 'gantry'
+                continue
+            if indent == 2 and stripped.startswith('xarm:'):
+                current_section = 'xarm'
+                continue
+
+            # If we dedent back to subsection level or blank line, keep state until new section
+            if current_section and indent >= 4:
+                # Inside current section body
+                if stripped.startswith('programs_path:'):
+                    if current_section == 'gantry':
+                        replace_line(i, indent, gantry_value)
+                    elif current_section == 'xarm':
+                        replace_line(i, indent, xarm_value)
+                    continue
+
+    return new_lines
+
+def prepare_app_config() -> bool:
+    """Ensure app_config.yaml exists and has correct local programs paths.
+
+    - Copies app_config_template.yaml to app_config.yaml if missing.
+    - Updates systems.gantry.programs_path and systems.xarm.programs_path
+      to absolute paths within this checkout.
+    """
+    try:
+        repo_root = Path(__file__).parent
+        config_dir = repo_root / 'scenario_inspector' / 'config'
+        template_file = config_dir / 'app_config_template.yaml'
+        target_file = config_dir / 'app_config.yaml'
+
+        if not template_file.exists():
+            print(f"Warning: Template config not found: {template_file}")
+            return False
+
+        if not target_file.exists():
+            # Copy template -> target
+            content = template_file.read_text(encoding='utf-8')
+            target_file.write_text(content, encoding='utf-8')
+            print("Created app_config.yaml from template")
+        else:
+            print("app_config.yaml already exists; leaving existing values in place")
+            # Still attempt to patch paths to ensure local correctness
+
+        # Compute real paths
+        systems_dir = repo_root / 'scenario_inspector' / 'src' / 'systems'
+        gantry_programs = systems_dir / 'gantry_programs'
+        xarm_programs = systems_dir / 'xarm_programs'
+
+        if not gantry_programs.exists():
+            print(f"Warning: gantry_programs directory not found: {gantry_programs}")
+        if not xarm_programs.exists():
+            print(f"Warning: xarm_programs directory not found: {xarm_programs}")
+
+        # Patch YAML text lines
+        lines = target_file.read_text(encoding='utf-8').splitlines(keepends=True)
+        patched = _patch_programs_paths_in_yaml_lines(lines, gantry_programs, xarm_programs)
+        target_file.write_text(''.join(patched), encoding='utf-8')
+        print("Patched programs_path for gantry and xarm in app_config.yaml")
+        return True
+    except Exception as e:
+        print(f"Error preparing app_config.yaml: {e}")
+        return False
+
 def verify_installation():
     """Verify the installation was successful"""
     print("\nVerifying installation...")
@@ -176,6 +337,12 @@ def print_completion_info():
     print("  1. Navigate to scenario_creator/")
     print("  2. Run: python scenario_creator.py")
     print("")
+    print("Scan Tools (viewer & processor):")
+    print("  - Location: scan_tools/")
+    print("  - Start Viewer: start-viewer.bat or python scan_viewer.py")
+    print("  - Start Processor: start-processor.bat or python enhanced_scan_processor.py")
+    print("  - Config: scan_tools/.env (created from .env.template)")
+    print("")
     print("Configuration files:")
     print("  - Main config: scenario_inspector/config/app_config.yaml")
     print("  - Environment: .env")
@@ -203,6 +370,14 @@ def main():
     if not install_scenario_creator():
         success = False
     
+    # Install Scan Tools (viewer & processor)
+    if not install_scan_tools():
+        success = False
+
+    # Prepare configuration (copy template and patch paths)
+    if not prepare_app_config():
+        success = False
+
     # Verify installation
     verify_installation()
     

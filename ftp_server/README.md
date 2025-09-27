@@ -1,57 +1,64 @@
 # AUAS FTP Server
 
-Simple Python FTP server for the AUAS Inspection Engine project.
+Simple, configurable FTP server used by the AUAS Inspection Engine.
 
-## Features
+## What’s new
 
-- ✅ Simple setup and configuration
-- ✅ User authentication (inspection_engine/admin)
-- ✅ Anonymous read-only access
-- ✅ No complex TLS configuration needed
-- ✅ Perfect for development and testing
+- Reads configuration from a .env file (project root or current folder)
+- Creates a piece_reference folder (used by the viewer to upload cleaned PLYs)
+- Initializes last_processed_date.txt at the base path (used by the processor)
+- Keeps anonymous read-only access for quick testing
 
-## Quick Start
+## Quick start (Python)
 
-1. **Start the server:**
-```bash
+```powershell
 cd ftp_server
-python start_server.py
+python server.py
 ```
 
-2. **Connect to server:**
-- **Host:** 127.0.0.1
-- **Port:** 21
-- **Username:** inspection_engine
-- **Password:** admin
-- **Base Path:** C:\Users\Agordien\Documents\projects\AUAS\FTP
+Defaults if no .env is present:
+- Host: 0.0.0.0 (connect via 127.0.0.1 locally)
+- Port: 21
+- Base Path: C:\Users\Agordien\Documents\projects\AUAS\FTP
 
-## Configuration
+Credentials:
+- Username: inspection_engine
+- Password: admin
+- Anonymous: enabled (read-only)
 
-The server is configured with:
-- **Main user:** `inspection_engine` with full permissions
-- **Anonymous access:** Read-only access enabled
-- **Base directory:** `C:\Users\Agordien\Documents\projects\AUAS\FTP`
-- **Inspections folder:** `C:\Users\Agordien\Documents\projects\AUAS\FTP\inspections`
+## Configuration via .env
 
-## Files
+Place a .env in the project root or in ftp_server/ with any of:
 
-- `server.py` - Main FTP server implementation
-- `start_server.py` - Launcher script with dependency installation
-- `README.md` - This file
+```
+FTP_HOST=0.0.0.0
+FTP_PORT=21
+FTP_BASE_PATH=C:\\Users\\Agordien\\Documents\\projects\\AUAS\\FTP
+```
+
+On startup the server ensures these locations exist under FTP_BASE_PATH:
+- inspections/ — upload area for raw inspection data
+- piece_reference/ — destination for cleaned PLYs by piece reference (from the viewer)
+- last_processed_date.txt — tracking file used by the batch processor
+- server_info.txt — basic server info
+
+## Integration with scan_tools
+
+- Viewer (scan_tools/scan_viewer.py) uploads cleaned PLYs to: piece_reference/<reference>
+- Processor (scan_tools/enhanced_scan_processor.py) reads LOCAL_FTP_ROOT from scan_tools/.env and expects the same directory tree created by the FTP server
 
 ## Testing
 
-You can test the server with any FTP client:
-```bash
-# Command line
-ftp 127.0.0.1
+Any FTP client works. Example with Python:
 
-# Python ftplib
+```python
 import ftplib
 ftp = ftplib.FTP('127.0.0.1')
 ftp.login('inspection_engine', 'admin')
+print(ftp.nlst())
+ftp.quit()
 ```
 
 ## Stopping
 
-Press `Ctrl+C` in the terminal where the server is running.
+Press Ctrl+C in the terminal where the server is running.
