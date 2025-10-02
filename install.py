@@ -6,6 +6,8 @@ Run this script to install and configure the entire AUAS Inspection Engine
 import os
 import sys
 import subprocess
+import shutil
+import importlib
 from pathlib import Path
 from typing import List
 
@@ -40,27 +42,123 @@ def install_scenario_inspector():
         return False
     
     try:
-        # Change to scenario_inspector directory and run setup
+        # Change to scenario_inspector directory and install dependencies
         original_cwd = os.getcwd()
         os.chdir(scenario_dir)
-        
-        # Install using setup.py which will handle all dependencies and post-install setup
-        result = subprocess.run([sys.executable, "setup.py", "install"], 
-                              capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print("Scenario Inspector installed successfully")
-            return True
+        ok = True
+
+        # 1) Install Python requirements explicitly (more reliable than setup.py install)
+        req_file = scenario_dir / "requirements.txt"
+        if req_file.exists():
+            print("Installing Scenario Inspector requirements...")
+            req_result = subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(req_file)],
+                                        capture_output=True, text=True, check=False)
+            if req_result.returncode != 0:
+                print("Error installing Scenario Inspector requirements:")
+                print(req_result.stderr)
+                ok = False
+            else:
+                print("Scenario Inspector requirements installed")
         else:
-            print("Error installing Scenario Inspector:")
-            print(result.stderr)
-            return False
+            print("Warning: requirements.txt not found in scenario_inspector; continuing...")
+
+        # 2) Install package itself via pip (avoids deprecated setup.py install)
+        if ok:
+            print("Installing Scenario Inspector package (pip install .)...")
+            pkg_result = subprocess.run([sys.executable, "-m", "pip", "install", "."],
+                                        capture_output=True, text=True, check=False)
+            if pkg_result.returncode != 0:
+                print("Error installing Scenario Inspector package:")
+                print(pkg_result.stderr)
+                ok = False
+            else:
+                print("Scenario Inspector package installed")
+
+        # 3) Run post-install steps that setup.py used to do (env file, directories)
+        try:
+            if not create_root_env_file():
+                print("Warning: Failed to create/update .env file")
+            # Copy .env into ftp_server/dist for the exe runtime
+            copy_env_to_ftp_dist()
+            ensure_scenario_output_directories()
+        except Exception as e:
+            print(f"Warning during post-install steps: {e}")
+
+        return ok
             
     except Exception as e:
         print(f"Error: {e}")
         return False
     finally:
         os.chdir(original_cwd)
+
+def create_root_env_file() -> bool:
+    """Create a .env file at repository root if it doesn't exist, mirroring setup.py behavior."""
+    try:
+        project_root = Path(__file__).parent
+        env_file = project_root / ".env"
+        if env_file.exists():
+            print(".env file already exists at repository root; leaving unchanged")
+            return True
+
+        print("Creating .env file at repository root...")
+        username = os.getenv('USERNAME', 'User')
+        content = (
+            "# .env file for AUAS Inspection Engine\n"
+            "# Set the FTP server host, port, and base path here\n"
+            "FTP_HOST=127.0.0.1\n"
+            "FTP_PORT=21\n"
+            f"FTP_BASE_PATH=C:\\Users\\{username}\\Documents\\projects\\AUAS\\FTP\n\n"
+            "# Project Root Path (for CRI lib and other dependencies)\n"
+            f"PROJECT_ROOT_PATH={str(project_root).replace('\\', '\\\\')}\n\n"
+            "# Scanner System Defaults\n"
+            "SCANNER_DEFAULT_IP=192.168.3.2\n"
+            "SCANNER_LLT_SDK_PATH=C:\\scanCONTROL-Windows-SDK\\python_bindings\n\n"
+            "# Gantry System Defaults  \n"
+            "GANTRY_DEFAULT_IP=192.168.3.11\n\n"
+            "# XArm System Defaults\n"
+            "XARM_DEFAULT_IP=192.168.1.222\n\n"
+            "# API Defaults\n"
+            "API_DEFAULT_URL=127.0.0.1:3000/api\n\n"
+            "# FTP Defaults (for inspector)\n"
+            "FTP_DEFAULT_SERVER=ftp://127.0.0.1\n"
+        )
+        env_file.write_text(content, encoding="utf-8")
+        print(f"Created .env file: {env_file}")
+        return True
+    except Exception as e:
+        print(f"Error creating .env: {e}")
+        return False
+
+def ensure_scenario_output_directories():
+    """Ensure scenario_inspector output and logs directories exist."""
+    scenario_dir = Path(__file__).parent / "scenario_inspector"
+    for d in [scenario_dir / "output", scenario_dir / "logs"]:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            # Provide feedback only if created new
+            print(f"Ensured directory exists: {d}")
+        except Exception as e:
+            print(f"Warning: could not ensure directory {d}: {e}")
+
+def copy_env_to_ftp_dist() -> bool:
+    """Copy the repository-root .env file into ftp_server/dist/.env for the exe runtime."""
+    try:
+        project_root = Path(__file__).parent
+        env_src = project_root / ".env"
+        if not env_src.exists():
+            print("Warning: .env not found at repository root; skipping copy to ftp_server/dist")
+            return False
+
+        dist_dir = project_root / "ftp_server" / "dist"
+        dist_dir.mkdir(parents=True, exist_ok=True)
+        target = dist_dir / ".env"
+        shutil.copy2(env_src, target)
+        print(f"Copied .env to {target}")
+        return True
+    except Exception as e:
+        print(f"Warning: Failed to copy .env to ftp_server/dist: {e}")
+        return False
 
 def install_ftp_server_dependencies():
     """Install FTP server dependencies"""
@@ -75,7 +173,7 @@ def install_ftp_server_dependencies():
         requirements_file = ftp_dir / "requirements.txt"
         if requirements_file.exists():
             result = subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(requirements_file)], 
-                                  capture_output=True, text=True)
+                                  capture_output=True, text=True, check=False)
             if result.returncode == 0:
                 print("FTP Server dependencies installed")
                 return True
@@ -105,7 +203,7 @@ def install_scenario_creator():
         requirements_file = creator_dir / "requirements.txt"
         if requirements_file.exists():
             result = subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],
-                                    capture_output=True, text=True)
+                                    capture_output=True, text=True, check=False)
             if result.returncode == 0:
                 print("Scenario Creator dependencies installed")
             else:
@@ -115,7 +213,7 @@ def install_scenario_creator():
         # If there's a setup.py, attempt a local install
         setup_file = creator_dir / "setup.py"
         if setup_file.exists():
-            result = subprocess.run([sys.executable, str(setup_file), "install"], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, str(setup_file), "install"], capture_output=True, text=True, check=False)
             if result.returncode == 0:
                 print("Scenario Creator installed via setup.py")
             else:
@@ -146,7 +244,7 @@ def install_scan_tools():
         if req.exists():
             print(f"Installing Python packages from {req} ...")
             result = subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(req)],
-                                    capture_output=True, text=True)
+                                    capture_output=True, text=True, check=False)
             if result.returncode == 0:
                 print("Scan Tools dependencies installed")
             else:
@@ -296,12 +394,12 @@ def verify_installation():
         scenario_src = Path(__file__).parent / "scenario_inspector" / "src"
         if scenario_src.exists():
             sys.path.insert(0, str(scenario_src))
-            
-            # Try importing main components
-            import config.config_manager
-            import systems.system_manager
+
+            # Try importing main components using importlib to avoid unused import lint
+            importlib.import_module("config.config_manager")
+            importlib.import_module("systems.system_manager")
             print("Scenario Inspector modules: OK")
-            
+
     except ImportError as e:
         print(f"Warning: Some modules may not be properly installed: {e}")
     

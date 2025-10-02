@@ -29,7 +29,7 @@ systems:
     connection_type: "tcp"
     # ip: "127.0.0.1"
     ip: "192.168.3.11"
-    port: 3921
+    port: 3920
     timeout: 20
     programs_path: "C:\\Users\\Agordien\\Documents\\projects\\AUAS\\auas_inspection_engine\\scenario_inspector\\src\\systems\\gantry_programs"
     type: "gantry_system"
@@ -55,7 +55,7 @@ output:
   time_format: "%Y%m%d_%H%M%S"
 
 logging:
-  level: "DEBUG"
+  level: "INFO" # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_folder_path: "logs"
   log_file_prefix: "scenario_inspector"
   console: true
